@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Database, Plus, Trash2, X, Play, RefreshCw, Bookmark, Sparkles, AlertCircle, Coins } from 'lucide-react';
-import { CreatureElement } from '../types';
-import { calculateElementsPrice } from '../utils/creatures';
+import { Database, Plus, Trash2, X, Play, RefreshCw, Bookmark, Sparkles, AlertCircle, Coins, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Creature, CreatureElement } from '../types';
+import { calculateElementsPrice, isInsideBase } from '../utils/creatures';
 
 export interface SavedDBCreature {
   id: string;
@@ -18,6 +18,9 @@ interface UserCreaturesModalProps {
   onClose: () => void;
   token: string | null;
   username: string | null;
+  userCreature?: Creature | null;
+  food?: number;
+  worldRadius?: number;
   onPlaceCreature: (creature: { name: string; color: string; elements: CreatureElement[] }) => void;
   onOpenNewEditor: () => void;
 }
@@ -27,12 +30,20 @@ export const UserCreaturesModal: React.FC<UserCreaturesModalProps> = ({
   onClose,
   token,
   username,
+  userCreature,
+  food = 0,
+  worldRadius = 50,
   onPlaceCreature,
   onOpenNewEditor,
 }) => {
   const [creatures, setCreatures] = useState<SavedDBCreature[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const inBase = userCreature ? Boolean(userCreature.inBase || isInsideBase(userCreature.x, userCreature.y, worldRadius)) : false;
+  const playerCreatureCost = userCreature ? calculateElementsPrice(userCreature.elements) : 0;
+  const playerFood = userCreature ? (typeof userCreature.foodEaten === 'number' ? userCreature.foodEaten : (userCreature.bankFood ?? food)) : food;
+  const totalBalance = playerCreatureCost + Math.max(0, playerFood);
 
   const fetchUserCreatures = async () => {
     if (!token) return;
@@ -112,6 +123,30 @@ export const UserCreaturesModal: React.FC<UserCreaturesModalProps> = ({
           </div>
         </div>
 
+        {/* Player Status & Requirements Bar */}
+        <div className="px-6 py-2.5 bg-slate-950/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            {inBase ? (
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-semibold text-2xs">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                1. Вы на Базе (Safe Zone)
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-950/80 border border-rose-500/40 text-rose-300 font-semibold text-2xs">
+                <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+                1. Вне Базы! Зайдите на базу
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 font-mono text-2xs">
+            <span className="text-slate-400">Доступно средств:</span>
+            <span className="px-2 py-0.5 rounded-md bg-indigo-950/80 border border-indigo-500/40 text-indigo-300 font-bold">
+              🍎 {totalBalance} (чудик: {playerCreatureCost} + еда: {playerFood})
+            </span>
+          </div>
+        </div>
+
         {/* Content */}
         <div className="p-6 overflow-y-auto flex-1 space-y-4">
           {error && (
@@ -142,55 +177,84 @@ export const UserCreaturesModal: React.FC<UserCreaturesModalProps> = ({
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {creatures.map((c) => (
-                <div
-                  key={c.id}
-                  className="bg-slate-950 border border-slate-800 hover:border-indigo-500/50 rounded-xl p-4 transition flex flex-col justify-between gap-3 group shadow-sm hover:shadow-md"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div
-                        className="w-4 h-4 rounded-full border border-white/20 shrink-0 shadow-sm"
-                        style={{ backgroundColor: c.color || '#6366f1' }}
-                      />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-slate-100 text-sm">{c.name}</h3>
-                          <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-mono font-bold">
-                            🍎 {calculateElementsPrice(c.elements || [])}
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-500">
-                          {c.elements?.length || 0} элементов • {new Date(c.createdAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleDelete(c.id, c.name)}
-                      className="text-slate-500 hover:text-rose-400 p-1 rounded hover:bg-slate-800 transition"
-                      title="Удалить из коллекции"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+              {creatures.map((c) => {
+                const price = calculateElementsPrice(c.elements || []);
+                const isAffordable = totalBalance >= price;
 
-                  <div className="flex items-center gap-2 pt-2 border-t border-slate-900">
-                    <button
-                      onClick={() => {
-                        onPlaceCreature({
-                          name: c.name,
-                          color: c.color,
-                          elements: c.elements,
-                        });
-                        onClose();
-                      }}
-                      className="flex-1 py-1.5 px-3 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 rounded-lg text-xs font-medium transition flex items-center justify-center gap-1.5"
-                    >
-                      <Play className="w-3.5 h-3.5" /> Выпустить на поле
-                    </button>
+                return (
+                  <div
+                    key={c.id}
+                    className={`bg-slate-950 border rounded-xl p-4 transition flex flex-col justify-between gap-3 group shadow-sm hover:shadow-md ${
+                      inBase && isAffordable
+                        ? 'border-slate-800 hover:border-emerald-500/50'
+                        : 'border-slate-800/80 opacity-90'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className="w-4 h-4 rounded-full border border-white/20 shrink-0 shadow-sm"
+                          style={{ backgroundColor: c.color || '#6366f1' }}
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="font-semibold text-slate-100 text-sm truncate">{c.name}</h3>
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                                isAffordable
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                  : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                              }`}
+                              title={`Стоимость чудика: ${price} 🍎`}
+                            >
+                              🍎 {price}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {c.elements?.length || 0} элементов • {new Date(c.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDelete(c.id, c.name)}
+                        className="text-slate-500 hover:text-rose-400 p-1 rounded hover:bg-slate-800 transition"
+                        title="Удалить из коллекции"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2 border-t border-slate-900">
+                      <button
+                        onClick={() => {
+                          onPlaceCreature({
+                            name: c.name,
+                            color: c.color,
+                            elements: c.elements,
+                          });
+                        }}
+                        className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition flex items-center justify-center gap-1.5 ${
+                          inBase && isAffordable
+                            ? 'bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 cursor-pointer shadow-sm'
+                            : !inBase
+                            ? 'bg-slate-800/60 hover:bg-slate-800 text-amber-300 border border-slate-700 cursor-pointer'
+                            : 'bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-500/30 cursor-pointer'
+                        }`}
+                        title={
+                          !inBase
+                            ? '⚠️ Вы вне Базы! Смена доступна только на Базе.'
+                            : !isAffordable
+                            ? `⚠️ Не хватает ${price - totalBalance} 🍎 для выбора чудика!`
+                            : `Выбрать чудика "${c.name}" за ${price} 🍎`
+                        }
+                      >
+                        <Play className="w-3.5 h-3.5" />
+                        <span>Выбрать на поле (🍎 {price})</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -203,7 +267,7 @@ export const UserCreaturesModal: React.FC<UserCreaturesModalProps> = ({
               onClose();
               onOpenNewEditor();
             }}
-            className="flex items-center gap-1.5 text-indigo-400 hover:text-indigo-300 font-medium transition"
+            className="flex items-center gap-1.5 text-indigo-400 hover:text-indigo-300 font-medium transition cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" /> Конструктор нового чудика
           </button>

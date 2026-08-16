@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Creature, SimulationStats, SavedPreset } from '../types';
-import { DEFAULT_PRESETS, isInsideBase } from '../utils/creatures';
+import { DEFAULT_PRESETS, isInsideBase, calculateElementsPrice } from '../utils/creatures';
 import {
   ChevronRight,
   ChevronLeft,
@@ -28,6 +28,8 @@ interface StatsPanelProps {
   foodCount: number;
   stats: SimulationStats;
   selectedCreatureId: string | null;
+  yourCreatureId?: string | null;
+  food?: number;
   savedPresets?: SavedPreset[];
   username?: string | null;
   token?: string | null;
@@ -49,6 +51,8 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({
   foodCount = 0,
   stats,
   selectedCreatureId,
+  yourCreatureId,
+  food = 0,
   savedPresets = [],
   username,
   token,
@@ -67,6 +71,12 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [presetToDeleteId, setPresetToDeleteId] = useState<string | null>(null);
   const selectedItemRef = useRef<HTMLDivElement | null>(null);
+
+  const myCreature = (creatures || []).find((c) => c.id === yourCreatureId || c.id === selectedCreatureId) || creatures[0];
+  const isPlayerInBase = myCreature ? Boolean(myCreature.inBase || isInsideBase(myCreature.x, myCreature.y, worldRadius)) : false;
+  const playerCreatureCost = myCreature ? calculateElementsPrice(myCreature.elements) : 0;
+  const playerFood = myCreature ? (typeof myCreature.foodEaten === 'number' ? myCreature.foodEaten : (myCreature.bankFood ?? food)) : food;
+  const totalPlayerBalance = playerCreatureCost + Math.max(0, playerFood);
 
   const selectedCreature = (creatures || []).find((c) => c.id === selectedCreatureId);
 
@@ -351,85 +361,120 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({
             </div>
 
             <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-              {savedPresets.map((sp) => (
-                <div
-                  key={sp.id}
-                  className="flex items-center justify-between p-2 rounded-xl border border-emerald-900/40 bg-emerald-950/20 hover:bg-emerald-900/30 text-left transition group gap-2"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span
-                      className="w-3 h-3 rounded-full shrink-0 border border-white/20"
-                      style={{ backgroundColor: sp.color }}
-                    />
-                    <div className="truncate">
-                      <div className="text-xs font-semibold text-slate-200 truncate flex items-center gap-1">
-                        <span>{sp.name}</span>
-                        {sp.isDb && (
-                          <span className="text-3xs px-1 rounded bg-emerald-900/80 text-emerald-300 border border-emerald-500/40">
-                            БД
+              {savedPresets.map((sp) => {
+                const spCost = calculateElementsPrice(sp.elements);
+                const isAffordable = totalPlayerBalance >= spCost;
+
+                return (
+                  <div
+                    key={sp.id}
+                    className={`flex items-center justify-between p-2 rounded-xl border text-left transition group gap-2 ${
+                      isPlayerInBase && isAffordable
+                        ? 'border-emerald-900/50 bg-emerald-950/30 hover:bg-emerald-900/40'
+                        : !isPlayerInBase
+                        ? 'border-slate-800/80 bg-slate-950/40 hover:bg-slate-900/60 opacity-90'
+                        : 'border-amber-900/40 bg-amber-950/20 hover:bg-amber-900/30'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="w-3.5 h-3.5 rounded-full shrink-0 border border-white/20 shadow-sm"
+                        style={{ backgroundColor: sp.color }}
+                      />
+                      <div className="truncate">
+                        <div className="text-xs font-semibold text-slate-200 truncate flex items-center gap-1.5">
+                          <span className="truncate">{sp.name}</span>
+                          {sp.isDb && (
+                            <span className="text-3xs px-1 rounded bg-emerald-900/80 text-emerald-300 border border-emerald-500/40">
+                              БД
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5 text-3xs">
+                          <span
+                            className={`px-1.5 py-0.2 rounded font-mono font-bold border ${
+                              isAffordable
+                                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+                                : 'bg-rose-950/80 text-rose-300 border-rose-500/40'
+                            }`}
+                            title={`Стоимость чудика: ${spCost} 🍎. Доступно средств: ${totalPlayerBalance} 🍎 (чудик: ${playerCreatureCost} 🍎 + еда: ${playerFood} 🍎)`}
+                          >
+                            🍎 {spCost}
                           </span>
+                          <span className="text-slate-400 font-mono truncate">
+                            {sp.elements.length} эл. • {sp.createdAt}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {presetToDeleteId === sp.id ? (
+                      <div className="flex items-center gap-1 bg-red-950/80 p-1 rounded-lg border border-red-800/80 shrink-0">
+                        <span className="text-3xs font-semibold text-red-200 px-1">Удалить?</span>
+                        <button
+                          onClick={() => {
+                            onRemoveSavedPreset?.(sp.id);
+                            setPresetToDeleteId(null);
+                          }}
+                          className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white text-3xs font-bold rounded transition shadow"
+                          title="Да, удалить"
+                        >
+                          Да
+                        </button>
+                        <button
+                          onClick={() => setPresetToDeleteId(null)}
+                          className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-3xs font-bold rounded transition"
+                          title="Отмена"
+                        >
+                          Отмена
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {onEditSavedPreset && (
+                          <button
+                            onClick={() => onEditSavedPreset(sp)}
+                            className="p-1 text-slate-400 hover:text-amber-300 hover:bg-slate-800 rounded transition"
+                            title="Редактировать в конструкторе"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {onAddSavedPreset && (
+                          <button
+                            onClick={() => onAddSavedPreset(sp)}
+                            className={`p-1 rounded transition flex items-center justify-center ${
+                              isPlayerInBase && isAffordable
+                                ? 'text-emerald-400 hover:text-emerald-200 hover:bg-emerald-950/60 bg-emerald-950/30 border border-emerald-500/40'
+                                : !isPlayerInBase
+                                ? 'text-slate-400 hover:text-amber-300 hover:bg-slate-800 bg-slate-900 border border-slate-700'
+                                : 'text-rose-400 hover:text-rose-200 hover:bg-rose-950/60 bg-rose-950/30 border border-rose-500/40'
+                            }`}
+                            title={
+                              !isPlayerInBase
+                                ? '⚠️ Выбор чудика доступен только на Базе! (Кликните для проверки)'
+                                : !isAffordable
+                                ? `⚠️ Не хватает ${spCost - totalPlayerBalance} 🍎 для покупки! (Цена: ${spCost} 🍎, доступно: ${totalPlayerBalance} 🍎)`
+                                : `Выбрать чудика из базы (Стоимость: ${spCost} 🍎)`
+                            }
+                          >
+                            <Plus className="w-4 h-4 font-bold" />
+                          </button>
+                        )}
+                        {onRemoveSavedPreset && (
+                          <button
+                            onClick={() => setPresetToDeleteId(sp.id)}
+                            className="p-1 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded transition"
+                            title="Удалить из сохраненных"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         )}
                       </div>
-                      <div className="text-3xs text-slate-400 font-mono truncate">
-                        {sp.elements.length} эл. • {sp.createdAt}
-                      </div>
-                    </div>
+                    )}
                   </div>
-
-                  {presetToDeleteId === sp.id ? (
-                    <div className="flex items-center gap-1 bg-red-950/80 p-1 rounded-lg border border-red-800/80 shrink-0">
-                      <span className="text-3xs font-semibold text-red-200 px-1">Удалить?</span>
-                      <button
-                        onClick={() => {
-                          onRemoveSavedPreset?.(sp.id);
-                          setPresetToDeleteId(null);
-                        }}
-                        className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white text-3xs font-bold rounded transition shadow"
-                        title="Да, удалить"
-                      >
-                        Да
-                      </button>
-                      <button
-                        onClick={() => setPresetToDeleteId(null)}
-                        className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-3xs font-bold rounded transition"
-                        title="Отмена"
-                      >
-                        Отмена
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-0.5 shrink-0">
-                      {onEditSavedPreset && (
-                        <button
-                          onClick={() => onEditSavedPreset(sp)}
-                          className="p-1 text-slate-400 hover:text-amber-300 hover:bg-slate-800 rounded transition"
-                          title="Редактировать в конструкторе"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      {onAddSavedPreset && (
-                        <button
-                          onClick={() => onAddSavedPreset(sp)}
-                          className="p-1 text-emerald-400 hover:text-emerald-300 hover:bg-slate-800 rounded transition"
-                          title="Разместить на поле"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      )}
-                      {onRemoveSavedPreset && (
-                        <button
-                          onClick={() => setPresetToDeleteId(sp.id)}
-                          className="p-1 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded transition"
-                          title="Удалить из сохраненных"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

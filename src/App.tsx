@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronUp, ChevronDown, Wifi, WifiOff } from 'lucide-react';
 import { Creature, CreatureElement, Food, GridTheme, SimulationStats, PendingPlacement, CreatureLogEntry, SavedPreset, User } from './types';
-import { createCreature, calculatePhysicsForces, determineCreatureHeadAngle, DEFAULT_PRESETS, isInsideBase, getBaseBounds, updateElementPrices } from './utils/creatures';
+import { createCreature, calculatePhysicsForces, determineCreatureHeadAngle, DEFAULT_PRESETS, isInsideBase, getBaseBounds, updateElementPrices, canSpawnCreature, calculateElementsPrice } from './utils/creatures';
 import { soundFx } from './utils/audio';
 import { gameWs, LeaderboardEntry, ServerStats, WSChatMessage } from './utils/websocket';
 import { GridCanvas } from './components/GridCanvas';
@@ -1232,6 +1232,8 @@ export default function App() {
           foodCount={foods.length}
           stats={stats}
           selectedCreatureId={selectedCreatureId}
+          yourCreatureId={yourCreatureId || controlledCreatureId || selectedCreatureId}
+          food={localFood}
           savedPresets={savedPresets}
           username={authUser?.username}
           token={authToken}
@@ -1277,14 +1279,87 @@ export default function App() {
           }}
           onOpenLogs={() => setIsLogsOpen(true)}
           onAddSavedPreset={(sp) => {
+            const myCreature = (creatures || []).find((c) => c.id === yourCreatureId || c.id === selectedCreatureId || c.id === controlledCreatureId) || (creatures || [])[0];
+            const check = canSpawnCreature(myCreature, sp.elements, localFood, worldRadius);
+
+            if (!check.allowed) {
+              soundFx.playFlex?.();
+              setToastMessage(check.reason || '⛔ Невозможно выбрать чудика!');
+              setTimeout(() => setToastMessage(null), 5000);
+              return;
+            }
+
+            // Оба условия выполнены: игрок на базе и средств достаточно
             soundFx.playEvolve();
             const initialAngle = determineCreatureHeadAngle(sp.elements);
-            setPendingPlacement({
-              name: sp.name,
-              elements: JSON.parse(JSON.stringify(sp.elements)),
-              color: sp.color,
-              angleDeg: initialAngle,
-            });
+
+            if (myCreature) {
+              const foodDiff = check.newFood - check.currentFood;
+              if (foodDiff < 0) {
+                handleSpendFood(Math.abs(foodDiff));
+              } else if (foodDiff > 0) {
+                handleDepositFood(foodDiff);
+              }
+              setLocalFood(check.newFood);
+
+              gameWs.send({
+                type: 'join',
+                name: sp.name,
+                color: sp.color,
+                elements: sp.elements,
+                targetX: myCreature.x,
+                targetY: myCreature.y,
+                targetAngleDeg: myCreature.angleDeg || initialAngle,
+              });
+
+              gameWs.send({
+                type: 'edit_creature',
+                name: sp.name,
+                color: sp.color,
+                elements: sp.elements,
+              });
+
+              setCreatures((prev) =>
+                prev.map((c) =>
+                  c.id === myCreature.id
+                    ? {
+                        ...c,
+                        name: sp.name,
+                        color: sp.color,
+                        elements: sp.elements,
+                        foodEaten: check.newFood,
+                        bankFood: check.newFood,
+                        forces: calculatePhysicsForces(sp.elements, c.muscleStep || 0),
+                      }
+                    : c
+                )
+              );
+
+              addLogEntry(
+                myCreature.id,
+                sp.name,
+                sp.color,
+                'пресет',
+                myCreature.x,
+                myCreature.y,
+                myCreature.angleDeg || initialAngle,
+                sp.elements
+              );
+
+              setToastMessage(
+                `✅ Чудик "${sp.name}" выбран! (Цена: ${check.targetCost} 🍎, новый баланс еды: ${check.newFood} 🍎)`
+              );
+              setTimeout(() => setToastMessage(null), 4000);
+            } else {
+              setPendingPlacement({
+                name: sp.name,
+                elements: JSON.parse(JSON.stringify(sp.elements)),
+                color: sp.color,
+                angleDeg: initialAngle,
+              });
+              setToastMessage(`✅ Чудик "${sp.name}" готов к размещению на Базе! (Цена: ${check.targetCost} 🍎)`);
+              setTimeout(() => setToastMessage(null), 3500);
+            }
           }}
           onRemoveSavedPreset={async (id) => {
             const target = savedPresets.find((p) => p.id === id);
@@ -1407,19 +1482,83 @@ export default function App() {
       <UserCreaturesModal
         isOpen={isUserCreaturesOpen}
         token={authToken}
+        username={authUser?.username || null}
+        userCreature={(creatures || []).find((c) => c.id === yourCreatureId || c.id === selectedCreatureId || c.id === controlledCreatureId) || (creatures || [])[0]}
+        food={localFood}
+        worldRadius={worldRadius}
         onClose={() => setIsUserCreaturesOpen(false)}
-        onLoadCreature={(creature) => {
+        onOpenNewEditor={handleOpenNewEditor}
+        onPlaceCreature={(creature) => {
+          const myCreature = (creatures || []).find((c) => c.id === yourCreatureId || c.id === selectedCreatureId || c.id === controlledCreatureId) || (creatures || [])[0];
+          const check = canSpawnCreature(myCreature, creature.elements, localFood, worldRadius);
+
+          if (!check.allowed) {
+            soundFx.playFlex?.();
+            setToastMessage(check.reason || '⛔ Невозможно выбрать чудика!');
+            setTimeout(() => setToastMessage(null), 5000);
+            return;
+          }
+
           setIsUserCreaturesOpen(false);
           soundFx.playEvolve();
-          const angle = determineCreatureHeadAngle(creature.elements);
-          setPendingPlacement({
-            name: creature.name,
-            elements: JSON.parse(JSON.stringify(creature.elements)),
-            color: creature.color,
-            angleDeg: angle,
-          });
-          setToastMessage(`Выбран чудик "${creature.name}" из базы данных! Кликните на поле для спавна.`);
-          setTimeout(() => setToastMessage(null), 3500);
+          const initialAngle = determineCreatureHeadAngle(creature.elements);
+
+          if (myCreature) {
+            const foodDiff = check.newFood - check.currentFood;
+            if (foodDiff < 0) {
+              handleSpendFood(Math.abs(foodDiff));
+            } else if (foodDiff > 0) {
+              handleDepositFood(foodDiff);
+            }
+            setLocalFood(check.newFood);
+
+            gameWs.send({
+              type: 'join',
+              name: creature.name,
+              color: creature.color,
+              elements: creature.elements,
+              targetX: myCreature.x,
+              targetY: myCreature.y,
+              targetAngleDeg: myCreature.angleDeg || initialAngle,
+            });
+
+            gameWs.send({
+              type: 'edit_creature',
+              name: creature.name,
+              color: creature.color,
+              elements: creature.elements,
+            });
+
+            setCreatures((prev) =>
+              prev.map((c) =>
+                c.id === myCreature.id
+                  ? {
+                      ...c,
+                      name: creature.name,
+                      color: creature.color,
+                      elements: creature.elements,
+                      foodEaten: check.newFood,
+                      bankFood: check.newFood,
+                      forces: calculatePhysicsForces(creature.elements, c.muscleStep || 0),
+                    }
+                  : c
+              )
+            );
+
+            setToastMessage(
+              `✅ Чудик "${creature.name}" успешно выбран из базы! (Списано за детали: ${Math.max(0, check.targetCost - check.currentCost)} 🍎, баланс еды: ${check.newFood} 🍎)`
+            );
+            setTimeout(() => setToastMessage(null), 4000);
+          } else {
+            setPendingPlacement({
+              name: creature.name,
+              elements: JSON.parse(JSON.stringify(creature.elements)),
+              color: creature.color,
+              angleDeg: initialAngle,
+            });
+            setToastMessage(`Выбран чудик "${creature.name}" из базы данных! Кликните на базе для спавна.`);
+            setTimeout(() => setToastMessage(null), 3500);
+          }
         }}
       />
     </div>

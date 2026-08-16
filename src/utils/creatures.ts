@@ -156,9 +156,12 @@ export function canSpawnCreature(
 ): {
   allowed: boolean;
   reason?: string;
+  conditionFailed?: 'base' | 'food';
   targetCost: number;
   currentCost: number;
+  currentFood: number;
   totalAvailable: number;
+  missingFood: number;
   newFood: number;
 } {
   const targetCost = calculateElementsPrice(targetElements);
@@ -166,49 +169,66 @@ export function canSpawnCreature(
   if (!currentCreature) {
     // Новый игрок без чудика
     const totalAvailable = Math.max(0, currentFood);
-    if (totalAvailable < targetCost) {
+    if (!IS_UNLIMITED_MODE && totalAvailable < targetCost) {
+      const missing = targetCost - totalAvailable;
       return {
         allowed: false,
-        reason: `⛔ Недостаточно еды для спавна! Стоимость чудика: ${targetCost} 🍎, доступно: ${totalAvailable} 🍎. Не хватает: ${targetCost - totalAvailable} 🍎.`,
+        conditionFailed: 'food',
+        reason: `⛔ Недостаточно еды для спавна! Стоимость чудика: ${targetCost} 🍎, доступно: ${totalAvailable} 🍎. Не хватает: ${missing} 🍎.`,
         targetCost,
         currentCost: 0,
+        currentFood: totalAvailable,
         totalAvailable,
-        newFood: currentFood,
+        missingFood: missing,
+        newFood: totalAvailable,
       };
     }
     return {
       allowed: true,
       targetCost,
       currentCost: 0,
+      currentFood: totalAvailable,
       totalAvailable,
+      missingFood: 0,
       newFood: totalAvailable - targetCost,
     };
   }
 
+  // Условие 1: игрок должен быть на Базе (Safe Zone)
   const inBase = Boolean(currentCreature.inBase || isInsideBase(currentCreature.x, currentCreature.y, worldRadius));
   if (!inBase) {
+    const currentCost = calculateElementsPrice(currentCreature.elements);
+    const foodBalance = typeof currentCreature.foodEaten === 'number' ? currentCreature.foodEaten : currentFood;
+    const totalAvailable = currentCost + Math.max(0, foodBalance);
     return {
       allowed: false,
-      reason: '⛔ Спавн и замена чудика доступны только на БАЗЕ (Safe Zone)! Зайдите на базу.',
+      conditionFailed: 'base',
+      reason: '⛔ Условие 1 не выполнено: Вы должны находиться на БАЗЕ (Safe Zone) для смены/выбора чудика! Зайдите на базу.',
       targetCost,
-      currentCost: calculateElementsPrice(currentCreature.elements),
-      totalAvailable: calculateElementsPrice(currentCreature.elements) + (currentCreature.foodEaten ?? currentFood),
-      newFood: currentFood,
+      currentCost,
+      currentFood: foodBalance,
+      totalAvailable,
+      missingFood: 0,
+      newFood: foodBalance,
     };
   }
 
+  // Условие 2: Еда + Стоимость текущего чудика >= Стоимость чудика из базы
   const currentCost = calculateElementsPrice(currentCreature.elements);
   const foodBalance = typeof currentCreature.foodEaten === 'number' ? currentCreature.foodEaten : currentFood;
   const totalAvailable = currentCost + Math.max(0, foodBalance);
 
-  if (totalAvailable < targetCost) {
+  if (!IS_UNLIMITED_MODE && totalAvailable < targetCost) {
     const missing = targetCost - totalAvailable;
     return {
       allowed: false,
-      reason: `⛔ Недостаточно еды для спавна! Стоимость чудика: ${targetCost} 🍎. Доступно: ${totalAvailable} 🍎 (в текущем чудике: ${currentCost} 🍎 + запас еды: ${foodBalance} 🍎). Не хватает: ${missing} 🍎.`,
+      conditionFailed: 'food',
+      reason: `⛔ Условие 2 не выполнено: Недостаточно средств! Стоимость чудика: ${targetCost} 🍎. Доступно: ${totalAvailable} 🍎 (текущий чудик: ${currentCost} 🍎 + еда: ${foodBalance} 🍎). Не хватает: ${missing} 🍎.`,
       targetCost,
       currentCost,
+      currentFood: foodBalance,
       totalAvailable,
+      missingFood: missing,
       newFood: foodBalance,
     };
   }
@@ -218,7 +238,9 @@ export function canSpawnCreature(
     allowed: true,
     targetCost,
     currentCost,
+    currentFood: foodBalance,
     totalAvailable,
+    missingFood: 0,
     newFood,
   };
 }
