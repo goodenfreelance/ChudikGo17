@@ -139,7 +139,7 @@ export interface Food {
   spawnTime: number;
 }
 
-export type GridTheme = 'notebook' | 'blueprint' | 'dark' | 'paper' | 'game' | 'game-light';
+export type GridTheme = 'notebook' | 'blueprint' | 'dark' | 'paper' | 'game' | 'game-light' | 'cartoon';
 
 export interface SimulationStats {
   foodEatenTotal: number;

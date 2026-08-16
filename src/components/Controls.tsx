@@ -257,31 +257,45 @@ export const Controls: React.FC<ControlsProps> = ({
       <div className="flex items-center gap-1.5">
         <button
           onClick={() => {
-            if (gridTheme === 'game') onChangeTheme('game-light');
+            if (gridTheme === 'cartoon') onChangeTheme('game');
+            else if (gridTheme === 'game') onChangeTheme('game-light');
             else if (gridTheme === 'game-light') onChangeTheme('notebook');
-            else onChangeTheme('game');
+            else onChangeTheme('cartoon');
           }}
           className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition shadow-sm ${
-            gridTheme === 'game' || gridTheme === 'game-light'
+            gridTheme === 'cartoon'
+              ? 'bg-gradient-to-r from-amber-400 via-rose-400 to-indigo-400 text-slate-900 font-bold ring-2 ring-amber-300 shadow-amber-500/30 animate-pulse'
+              : gridTheme === 'game' || gridTheme === 'game-light'
               ? 'bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 text-white ring-2 ring-pink-500/50 shadow-pink-500/25'
               : 'bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-slate-300'
           }`}
           title={
-            gridTheme === 'game'
+            gridTheme === 'cartoon'
+              ? 'Включить Игровой темный режим'
+              : gridTheme === 'game'
               ? 'Переключить на светлый игровой режим'
               : gridTheme === 'game-light'
               ? 'Вернуться в тетрадь'
-              : 'Включить яркий игровой режим'
+              : 'Включить режим Мультик 🎨✨'
           }
         >
-          <Gamepad2 className="w-3.5 h-3.5 text-pink-400" />
-          <span>
-            {gridTheme === 'game'
-              ? 'Игра (Т) 🌙'
-              : gridTheme === 'game-light'
-              ? 'Игра (С) ☀️'
-              : 'Игра'}
-          </span>
+          {gridTheme === 'cartoon' ? (
+            <>
+              <Sparkles className="w-3.5 h-3.5 text-amber-900" />
+              <span>Мультик 🎨✨</span>
+            </>
+          ) : (
+            <>
+              <Gamepad2 className="w-3.5 h-3.5 text-pink-400" />
+              <span>
+                {gridTheme === 'game'
+                  ? 'Игра (Т) 🌙'
+                  : gridTheme === 'game-light'
+                  ? 'Игра (С) ☀️'
+                  : 'Мультик / Игра'}
+              </span>
+            </>
+          )}
         </button>
 
         <select
@@ -289,6 +303,7 @@ export const Controls: React.FC<ControlsProps> = ({
           onChange={(e) => onChangeTheme(e.target.value as GridTheme)}
           className="px-2 py-1.5 text-xs bg-slate-800/80 border border-slate-700/60 rounded-xl text-slate-200 focus:outline-none"
         >
+          <option value="cartoon">Мультик 🎨✨ (Супер анимации)</option>
           <option value="notebook">Тетрадь 📖</option>
           <option value="game">Игровой темный 🐍🌙</option>
           <option value="game-light">Игровой светлый 🐍☀️</option>

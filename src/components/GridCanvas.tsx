@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Creature, Food, GridTheme, Point, PendingPlacement } from '../types';
 import { determineCreatureHeadAngle, isRandomMuscleTriggered, getRandomMuscleState, calculateKinematicBends, getCreatureElementWorldPositions, getBaseBounds, isInsideBase } from '../utils/creatures';
+import { soundFx } from '../utils/audio';
 import { ZoomIn, ZoomOut, Maximize2, RotateCw, RotateCcw, X, Crosshair, Compass, Gamepad2, ArrowUp, ChevronDown, ChevronUp, Zap, Shield } from 'lucide-react';
 
 interface GridCanvasProps {
@@ -72,8 +73,27 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
   const lastRenderTimeRef = useRef<number>(performance.now());
 
   // Trail history and boost particles system
+  interface BoostParticle {
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    life: number;
+    maxLife: number;
+    size: number;
+    color: string;
+    type: 'flame' | 'spark' | 'ink' | 'shockwave' | 'comic_text' | 'star' | 'heart' | 'confetti' | 'puff' | 'sweat' | 'rainbow' | 'sleep_z';
+    text?: string;
+    rot?: number;
+    vRot?: number;
+  }
+
   const trailsRef = useRef<Map<string, Array<{ x: number; y: number; angleDeg: number; color: string; isDashing: boolean; time: number }>>>(new Map());
-  const boostParticlesRef = useRef<Array<{ x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number; color: string; type: 'flame' | 'spark' | 'ink' | 'shockwave' }>>([]);
+  const boostParticlesRef = useRef<BoostParticle[]>([]);
+  const prevFoodEatenMapRef = useRef<Map<string, number>>(new Map());
+  const prevDashingMapRef = useRef<Map<string, boolean>>(new Map());
+  const prevBrakingMapRef = useRef<Map<string, boolean>>(new Map());
+  const cartoonCloudsRef = useRef<Array<{ x: number; y: number; scale: number; speed: number; opacity: number }>>([]);
   const smoothedHudYRef = useRef<Map<string, number>>(new Map());
   const isSpacePressedRef = useRef<boolean>(isSpacePressed);
   isSpacePressedRef.current = isSpacePressed;
@@ -388,6 +408,7 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
       const currentIsCameraLocked = isCameraLockedRef.current;
 
       // Theme Colors
+      const isCartoonTheme = currentGridTheme === 'cartoon';
       const isGameTheme = currentGridTheme === 'game' || currentGridTheme === 'game-light';
 
       let bgColor = '#090d16';
@@ -395,7 +416,12 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
       let nodeDotColor = 'rgba(255, 255, 255, 0.3)';
       let mainInkColor = '#f1f5f9';
 
-      if (currentGridTheme === 'notebook') {
+      if (currentGridTheme === 'cartoon') {
+        bgColor = '#bae6fd';
+        gridLineColor = 'rgba(168, 85, 247, 0.18)';
+        nodeDotColor = 'rgba(236, 72, 153, 0.55)';
+        mainInkColor = '#0f172a';
+      } else if (currentGridTheme === 'notebook') {
         bgColor = '#fafaf9';
         gridLineColor = 'rgba(59, 130, 246, 0.22)';
         nodeDotColor = 'rgba(30, 58, 138, 0.4)';
@@ -418,8 +444,18 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
       }
 
       // Background fill
-      ctx.fillStyle = bgColor;
-      ctx.fillRect(0, 0, width, height);
+      if (isCartoonTheme) {
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, height);
+        skyGrad.addColorStop(0, '#c7d2fe'); // Soft pastel violet sky
+        skyGrad.addColorStop(0.35, '#bae6fd'); // Cheerful light azure
+        skyGrad.addColorStop(0.7, '#fef08a'); // Warm sunny glow
+        skyGrad.addColorStop(1, '#fbcfe8'); // Bubblegum cotton candy pink
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, width, height);
+      } else {
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, width, height);
+      }
 
       const now = performance.now();
       const dt = lastRenderTimeRef.current ? Math.min((now - lastRenderTimeRef.current) / 1000, 0.1) : 0.016;
@@ -515,8 +551,57 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
       }
       activeOffsetRef.current = currentOffset;
 
-      // Render Grid Lines
       const scaledCell = CELL_SIZE * currentZoom;
+
+      // Initialize background cartoon clouds if needed
+      if (cartoonCloudsRef.current.length === 0) {
+        for (let i = 0; i < 24; i++) {
+          cartoonCloudsRef.current.push({
+            x: (Math.random() - 0.5) * worldSize * 1.5,
+            y: (Math.random() - 0.5) * worldSize * 1.5,
+            scale: 0.8 + Math.random() * 1.1,
+            speed: 0.4 + Math.random() * 1.0,
+            opacity: 0.45 + Math.random() * 0.4,
+          });
+        }
+      }
+
+      // Render floating cartoon background clouds
+      if (isCartoonTheme) {
+        ctx.save();
+        cartoonCloudsRef.current.forEach((cloud) => {
+          cloud.x += cloud.speed * dt;
+          if (cloud.x > halfWorld * 1.4) cloud.x = -halfWorld * 1.4;
+
+          const cx = currentOffset.x + cloud.x * scaledCell;
+          const cy = currentOffset.y + cloud.y * scaledCell;
+
+          if (cx > -200 && cx < width + 200 && cy > -200 && cy < height + 200) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.scale(cloud.scale * currentZoom, cloud.scale * currentZoom);
+            ctx.globalAlpha = cloud.opacity;
+
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = 'rgba(192, 132, 252, 0.35)';
+            ctx.lineWidth = 3;
+
+            ctx.beginPath();
+            ctx.arc(0, 0, 26, 0, Math.PI * 2);
+            ctx.arc(24, 4, 20, 0, Math.PI * 2);
+            ctx.arc(-24, 6, 19, 0, Math.PI * 2);
+            ctx.arc(12, -16, 17, 0, Math.PI * 2);
+            ctx.arc(-12, -14, 16, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.restore();
+          }
+        });
+        ctx.restore();
+      }
+
+      // Render Grid Lines
       const startX = Math.floor((-currentOffset.x) / scaledCell) - 1;
       const endX = Math.ceil((width - currentOffset.x) / scaledCell) + 1;
       const startY = Math.floor((-currentOffset.y) / scaledCell) - 1;
@@ -524,7 +609,10 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
 
       ctx.beginPath();
       ctx.strokeStyle = gridLineColor;
-      ctx.lineWidth = Math.max(1, 1.2 * currentZoom);
+      ctx.lineWidth = isCartoonTheme ? Math.max(1.2, 1.8 * currentZoom) : Math.max(1, 1.2 * currentZoom);
+      if (isCartoonTheme) {
+        ctx.setLineDash([4 * currentZoom, 4 * currentZoom]);
+      }
 
       for (let x = startX; x <= endX; x++) {
         const screenX = currentOffset.x + x * scaledCell;
@@ -537,11 +625,14 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
         ctx.lineTo(width, screenY);
       }
       ctx.stroke();
+      if (isCartoonTheme) {
+        ctx.setLineDash([]);
+      }
 
       // Render Grid Intersections / Nodes
       if (currentShowNodes) {
         ctx.fillStyle = nodeDotColor;
-        const dotRadius = Math.max(1.5, 2.5 * currentZoom);
+        const dotRadius = isCartoonTheme ? Math.max(2, 3.2 * currentZoom) : Math.max(1.5, 2.5 * currentZoom);
         ctx.beginPath();
         for (let x = startX; x <= endX; x++) {
           const screenX = currentOffset.x + x * scaledCell;
@@ -554,7 +645,7 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
         ctx.fill();
       }
 
-      // Render Field Arena Border Frame (Fast layered stroke, no expensive shadowBlur)
+      // Render Field Arena Border Frame (Fast layered stroke)
       const arenaTopLeft = {
         x: currentOffset.x + (-halfWorld) * scaledCell,
         y: currentOffset.y + (-halfWorld) * scaledCell,
@@ -562,16 +653,31 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
       const arenaW = worldSize * scaledCell;
       const arenaH = worldSize * scaledCell;
 
-      const arenaColor = isGameTheme ? '#ec4899' : (currentGridTheme === 'blueprint' ? '#38bdf8' : '#3b82f6');
-      ctx.save();
-      ctx.strokeStyle = arenaColor + '33';
-      ctx.lineWidth = Math.max(6, 10 * currentZoom);
-      ctx.strokeRect(arenaTopLeft.x, arenaTopLeft.y, arenaW, arenaH);
+      if (isCartoonTheme) {
+        // Rainbow candy striped cartoon border!
+        ctx.save();
+        ctx.strokeStyle = 'rgba(236, 72, 153, 0.35)';
+        ctx.lineWidth = Math.max(10, 16 * currentZoom);
+        ctx.strokeRect(arenaTopLeft.x, arenaTopLeft.y, arenaW, arenaH);
 
-      ctx.strokeStyle = arenaColor;
-      ctx.lineWidth = Math.max(2, 3.5 * currentZoom);
-      ctx.strokeRect(arenaTopLeft.x, arenaTopLeft.y, arenaW, arenaH);
-      ctx.restore();
+        ctx.strokeStyle = '#ec4899';
+        ctx.lineWidth = Math.max(3, 5 * currentZoom);
+        ctx.setLineDash([12 * currentZoom, 8 * currentZoom]);
+        ctx.strokeRect(arenaTopLeft.x, arenaTopLeft.y, arenaW, arenaH);
+        ctx.setLineDash([]);
+        ctx.restore();
+      } else {
+        const arenaColor = isGameTheme ? '#ec4899' : (currentGridTheme === 'blueprint' ? '#38bdf8' : '#3b82f6');
+        ctx.save();
+        ctx.strokeStyle = arenaColor + '33';
+        ctx.lineWidth = Math.max(6, 10 * currentZoom);
+        ctx.strokeRect(arenaTopLeft.x, arenaTopLeft.y, arenaW, arenaH);
+
+        ctx.strokeStyle = arenaColor;
+        ctx.lineWidth = Math.max(2, 3.5 * currentZoom);
+        ctx.strokeRect(arenaTopLeft.x, arenaTopLeft.y, arenaW, arenaH);
+        ctx.restore();
+      }
 
       // Render Safe Zone (БАЗА / Safe Zone in bottom-right corner)
       const baseBounds = getBaseBounds(halfWorld);
@@ -584,13 +690,21 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
 
       ctx.save();
       // Floor tint
-      ctx.fillStyle = isGameTheme ? 'rgba(16, 185, 129, 0.12)' : 'rgba(56, 189, 248, 0.08)';
+      ctx.fillStyle = isCartoonTheme
+        ? 'rgba(251, 207, 232, 0.35)'
+        : isGameTheme
+        ? 'rgba(16, 185, 129, 0.12)'
+        : 'rgba(56, 189, 248, 0.08)';
       ctx.fillRect(baseTopLeft.x, baseTopLeft.y, baseWidth, baseHeight);
 
       // Left, Bottom, Right protective perimeter borders (dashed)
-      ctx.strokeStyle = isGameTheme ? 'rgba(16, 185, 129, 0.7)' : 'rgba(14, 165, 233, 0.7)';
-      ctx.lineWidth = Math.max(2, 3 * currentZoom);
-      ctx.setLineDash([8 * currentZoom, 5 * currentZoom]);
+      ctx.strokeStyle = isCartoonTheme
+        ? 'rgba(236, 72, 153, 0.85)'
+        : isGameTheme
+        ? 'rgba(16, 185, 129, 0.7)'
+        : 'rgba(14, 165, 233, 0.7)';
+      ctx.lineWidth = Math.max(2.5, 3.5 * currentZoom);
+      ctx.setLineDash(isCartoonTheme ? [6 * currentZoom, 4 * currentZoom] : [8 * currentZoom, 5 * currentZoom]);
       ctx.beginPath();
       // Left side
       ctx.moveTo(baseTopLeft.x, baseTopLeft.y);
@@ -611,22 +725,24 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
       const wallPulse = Math.sin(now / 130) * 0.25 + 0.75;
       const wallFastPulse = Math.sin(now / 70) * 0.15 + 0.85;
 
-      // Layer 1: Wide Electric Cyan Glow
+      // Layer 1: Wide Glow
       ctx.beginPath();
       ctx.moveTo(wallStartX, wallY);
       ctx.lineTo(wallEndX, wallY);
-      ctx.strokeStyle = isGameTheme
+      ctx.strokeStyle = isCartoonTheme
+        ? `rgba(244, 114, 182, ${0.55 * wallPulse})`
+        : isGameTheme
         ? `rgba(6, 182, 212, ${0.45 * wallPulse})`
         : `rgba(56, 189, 248, ${0.45 * wallPulse})`;
       ctx.lineWidth = Math.max(12, 18 * currentZoom);
       ctx.lineCap = 'round';
       ctx.stroke();
 
-      // Layer 2: Vibrant Neon Plasma Barrier
+      // Layer 2: Vibrant Barrier
       ctx.beginPath();
       ctx.moveTo(wallStartX, wallY);
       ctx.lineTo(wallEndX, wallY);
-      ctx.strokeStyle = isGameTheme ? '#06b6d4' : '#0ea5e9';
+      ctx.strokeStyle = isCartoonTheme ? '#ec4899' : isGameTheme ? '#06b6d4' : '#0ea5e9';
       ctx.lineWidth = Math.max(5, 7 * currentZoom * wallFastPulse);
       ctx.stroke();
 
@@ -634,11 +750,11 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
       ctx.beginPath();
       ctx.moveTo(wallStartX, wallY);
       ctx.lineTo(wallEndX, wallY);
-      ctx.strokeStyle = '#a5f3fc';
+      ctx.strokeStyle = isCartoonTheme ? '#fef08a' : '#a5f3fc';
       ctx.lineWidth = Math.max(2.5, 3.5 * currentZoom);
       ctx.stroke();
 
-      // Layer 4: Hot White Center Filament
+      // Layer 4: Center Filament
       ctx.beginPath();
       ctx.moveTo(wallStartX, wallY);
       ctx.lineTo(wallEndX, wallY);
@@ -646,10 +762,10 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
       ctx.lineWidth = Math.max(1.2, 1.8 * currentZoom);
       ctx.stroke();
 
-      // Animated Downward Directional Flow Chevrons (indicating One-Way Entrance from Top)
+      // Animated Downward Directional Flow Chevrons
       const arrowStep = Math.max(24, 32 * currentZoom);
       const arrowCount = Math.floor(baseWidth / arrowStep);
-      const flowCycle = ((now / 20) % 16) / 16; // 0 to 1 cycle
+      const flowCycle = ((now / 20) % 16) / 16;
 
       for (let ai = 1; ai < arrowCount; ai++) {
         const arrowX = wallStartX + ai * arrowStep;
@@ -659,13 +775,14 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
 
         ctx.save();
         ctx.translate(arrowX, arrowY);
-        ctx.fillStyle = isGameTheme
+        ctx.fillStyle = isCartoonTheme
+          ? `rgba(236, 72, 153, ${arrowAlpha})`
+          : isGameTheme
           ? `rgba(34, 211, 238, ${arrowAlpha})`
           : `rgba(56, 189, 248, ${arrowAlpha})`;
         ctx.strokeStyle = `rgba(255, 255, 255, ${arrowAlpha * 0.9})`;
         ctx.lineWidth = Math.max(1, 1.5 * currentZoom);
 
-        // Small stylish downward chevron
         const aw = 4 * currentZoom;
         const ah = 4 * currentZoom;
         ctx.beginPath();
@@ -678,13 +795,11 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
 
       // Energy Emitter Pylons at wall ends
       [wallStartX, wallEndX].forEach((pylonX) => {
-        // Outer halo
         ctx.beginPath();
         ctx.arc(pylonX, wallY, (8 + wallPulse * 3) * currentZoom, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(6, 182, 212, 0.35)';
+        ctx.fillStyle = isCartoonTheme ? 'rgba(236, 72, 153, 0.4)' : 'rgba(6, 182, 212, 0.35)';
         ctx.fill();
 
-        // Solid diamond node
         ctx.beginPath();
         const pSize = 5 * currentZoom;
         ctx.moveTo(pylonX, wallY - pSize);
@@ -694,7 +809,7 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
         ctx.closePath();
         ctx.fillStyle = '#ffffff';
         ctx.fill();
-        ctx.strokeStyle = '#06b6d4';
+        ctx.strokeStyle = isCartoonTheme ? '#ec4899' : '#06b6d4';
         ctx.lineWidth = 1.8 * currentZoom;
         ctx.stroke();
       });
@@ -702,20 +817,20 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
       // Wall Badge / Title Tag in center
       const badgeCenterX = wallStartX + baseWidth / 2;
       const badgeCenterY = wallY - 14 * currentZoom;
-      const badgeText = '⚡ ВХОД СВЕРХУ ↓ (БЛОК ИЗНУТРИ ⛔)';
-      ctx.font = `bold ${Math.max(10, 11 * currentZoom)}px system-ui, sans-serif`;
+      const badgeText = isCartoonTheme ? '🏰 ДОМИК (ВХОД СВЕРХУ ↓) 🌈' : '⚡ ВХОД СВЕРХУ ↓ (БЛОК ИЗНУТРИ ⛔)';
+      ctx.font = `bold ${Math.max(10, 11.5 * currentZoom)}px system-ui, sans-serif`;
       const textMetrics = ctx.measureText(badgeText);
       const textW = textMetrics.width;
       const padX = 8 * currentZoom;
       const padY = 3.5 * currentZoom;
 
       // Badge background pill
-      ctx.fillStyle = isGameTheme ? 'rgba(8, 51, 68, 0.92)' : 'rgba(15, 23, 42, 0.92)';
-      ctx.strokeStyle = '#06b6d4';
-      ctx.lineWidth = Math.max(1.2, 1.8 * currentZoom);
+      ctx.fillStyle = isCartoonTheme ? 'rgba(255, 255, 255, 0.95)' : isGameTheme ? 'rgba(8, 51, 68, 0.92)' : 'rgba(15, 23, 42, 0.92)';
+      ctx.strokeStyle = isCartoonTheme ? '#ec4899' : '#06b6d4';
+      ctx.lineWidth = Math.max(1.5, 2 * currentZoom);
       ctx.beginPath();
       if (typeof ctx.roundRect === 'function') {
-        ctx.roundRect(badgeCenterX - textW / 2 - padX, badgeCenterY - 7 * currentZoom - padY, textW + padX * 2, 14 * currentZoom + padY * 2, 6 * currentZoom);
+        ctx.roundRect(badgeCenterX - textW / 2 - padX, badgeCenterY - 7 * currentZoom - padY, textW + padX * 2, 14 * currentZoom + padY * 2, 8 * currentZoom);
         ctx.fill();
         ctx.stroke();
       } else {
@@ -723,22 +838,24 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
         ctx.strokeRect(badgeCenterX - textW / 2 - padX, badgeCenterY - 7 * currentZoom - padY, textW + padX * 2, 14 * currentZoom + padY * 2);
       }
 
-      ctx.fillStyle = '#22d3ee';
+      ctx.fillStyle = isCartoonTheme ? '#be185d' : '#22d3ee';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(badgeText, badgeCenterX, badgeCenterY);
 
       // Base Zone Info Label inside the base
-      const baseLabel = '🛡️ БАЗА / SAFE ZONE';
-      const subLabel = 'Иммунитет • Вход сверху через яркую стену • Депозит в Банк';
+      const baseLabel = isCartoonTheme ? '🏰 ДОМИК / SAFE ZONE 🌈✨' : '🛡️ БАЗА / SAFE ZONE';
+      const subLabel = isCartoonTheme
+        ? 'Уютный домик • Безопасность 100% • Вкусная еда в Банк'
+        : 'Иммунитет • Вход сверху через яркую стену • Депозит в Банк';
       ctx.font = `bold ${Math.max(12, 14 * currentZoom)}px system-ui, sans-serif`;
-      ctx.fillStyle = isGameTheme ? '#34d399' : '#38bdf8';
+      ctx.fillStyle = isCartoonTheme ? '#be185d' : isGameTheme ? '#34d399' : '#38bdf8';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       ctx.fillText(baseLabel, baseTopLeft.x + 12 * currentZoom, baseTopLeft.y + 14 * currentZoom);
 
       ctx.font = `bold ${Math.max(9, 10.5 * currentZoom)}px monospace`;
-      ctx.fillStyle = isGameTheme ? 'rgba(167, 243, 208, 0.85)' : 'rgba(186, 230, 253, 0.85)';
+      ctx.fillStyle = isCartoonTheme ? '#831843' : isGameTheme ? 'rgba(167, 243, 208, 0.85)' : 'rgba(186, 230, 253, 0.85)';
       ctx.fillText(subLabel, baseTopLeft.x + 12 * currentZoom, baseTopLeft.y + 34 * currentZoom);
       ctx.restore();
 
@@ -756,7 +873,132 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
         const pulse = Math.sin(nowTime / 200 + food.x + food.y) * 2;
         const foodRadius = (6 + pulse) * currentZoom;
 
-        if (isGameTheme) {
+        if (isCartoonTheme) {
+          // --- CARTOON CUTE FOOD (Strawberries 🍓, Shiny Stars ⭐, Swirl Lollipops 🍭) ---
+          if (food.type === 'golden') {
+            // Golden Shining Smiling Star ⭐
+            const starR = (8 + pulse * 1.2) * currentZoom;
+            // Golden halo pulse
+            ctx.fillStyle = 'rgba(250, 204, 21, 0.35)';
+            ctx.beginPath();
+            ctx.arc(0, 0, starR * 1.8, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Star shape
+            ctx.beginPath();
+            for (let s = 0; s < 5; s++) {
+              const outerA = (s * Math.PI * 2) / 5 - Math.PI / 2;
+              const innerA = outerA + Math.PI / 5;
+              if (s === 0) ctx.moveTo(Math.cos(outerA) * starR, Math.sin(outerA) * starR);
+              else ctx.lineTo(Math.cos(outerA) * starR, Math.sin(outerA) * starR);
+              ctx.lineTo(Math.cos(innerA) * (starR * 0.48), Math.sin(innerA) * (starR * 0.48));
+            }
+            ctx.closePath();
+            ctx.fillStyle = '#facc15';
+            ctx.fill();
+            ctx.strokeStyle = '#854d0e';
+            ctx.lineWidth = 1.8 * currentZoom;
+            ctx.stroke();
+
+            // Cute smiling cartoon face on star
+            ctx.fillStyle = '#713f12';
+            ctx.beginPath();
+            ctx.arc(-2.5 * currentZoom, -1 * currentZoom, 1.2 * currentZoom, 0, Math.PI * 2);
+            ctx.arc(2.5 * currentZoom, -1 * currentZoom, 1.2 * currentZoom, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Smile
+            ctx.beginPath();
+            ctx.arc(0, 0.5 * currentZoom, 2 * currentZoom, 0, Math.PI);
+            ctx.strokeStyle = '#713f12';
+            ctx.lineWidth = 1 * currentZoom;
+            ctx.stroke();
+          } else if (food.type === 'super') {
+            // Swirly Candy Lollipop 🍭
+            const popR = (8 + pulse) * currentZoom;
+            // Stick
+            ctx.beginPath();
+            ctx.moveTo(0, popR * 0.5);
+            ctx.lineTo(0, popR * 1.6);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2.5 * currentZoom;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+            ctx.strokeStyle = '#94a3b8';
+            ctx.lineWidth = 0.8 * currentZoom;
+            ctx.stroke();
+
+            // Candy disc
+            ctx.beginPath();
+            ctx.arc(0, 0, popR, 0, Math.PI * 2);
+            ctx.fillStyle = '#ec4899';
+            ctx.fill();
+            ctx.strokeStyle = '#831843';
+            ctx.lineWidth = 1.8 * currentZoom;
+            ctx.stroke();
+
+            // Swirl spiral
+            ctx.beginPath();
+            const rot = (nowTime / 400) % (Math.PI * 2);
+            ctx.arc(0, 0, popR * 0.65, rot, rot + Math.PI);
+            ctx.strokeStyle = '#fef08a';
+            ctx.lineWidth = 2.2 * currentZoom;
+            ctx.stroke();
+
+            // Specular shine
+            ctx.beginPath();
+            ctx.arc(-popR * 0.35, -popR * 0.35, popR * 0.28, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.fill();
+          } else {
+            // Glossy Cartoon Strawberry / Cherry 🍓
+            const berryR = (7 + pulse) * currentZoom;
+            // Green leaf on top
+            ctx.beginPath();
+            ctx.ellipse(0, -berryR * 1.1, 4 * currentZoom, 2 * currentZoom, 0, 0, Math.PI * 2);
+            ctx.fillStyle = '#22c55e';
+            ctx.fill();
+            ctx.strokeStyle = '#15803d';
+            ctx.lineWidth = 1 * currentZoom;
+            ctx.stroke();
+
+            // Strawberry Body
+            ctx.beginPath();
+            ctx.arc(0, 0, berryR, 0, Math.PI * 2);
+            ctx.fillStyle = '#f43f5e';
+            ctx.fill();
+            ctx.strokeStyle = '#881337';
+            ctx.lineWidth = 1.8 * currentZoom;
+            ctx.stroke();
+
+            // Cute smiling cartoon face & rosy cheeks
+            ctx.fillStyle = '#881337';
+            ctx.beginPath();
+            ctx.arc(-2 * currentZoom, -1 * currentZoom, 1 * currentZoom, 0, Math.PI * 2);
+            ctx.arc(2 * currentZoom, -1 * currentZoom, 1 * currentZoom, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Blush cheeks
+            ctx.fillStyle = 'rgba(254, 205, 211, 0.8)';
+            ctx.beginPath();
+            ctx.arc(-3.5 * currentZoom, 1 * currentZoom, 1.2 * currentZoom, 0, Math.PI * 2);
+            ctx.arc(3.5 * currentZoom, 1 * currentZoom, 1.2 * currentZoom, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Smile
+            ctx.beginPath();
+            ctx.arc(0, 0.5 * currentZoom, 1.6 * currentZoom, 0, Math.PI);
+            ctx.strokeStyle = '#881337';
+            ctx.lineWidth = 0.9 * currentZoom;
+            ctx.stroke();
+
+            // White gloss highlight
+            ctx.beginPath();
+            ctx.arc(-berryR * 0.35, -berryR * 0.35, berryR * 0.3, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+            ctx.fill();
+          }
+        } else if (isGameTheme) {
           const glowR = foodRadius * 2.2;
           const mainColor = food.type === 'golden' ? '#facc15' : (food.type === 'super' ? '#ec4899' : '#10b981');
 
@@ -832,6 +1074,109 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
         const canDash = (creature.foodEaten ?? 0) > 0;
         const isDashing = (creature.state === 'dashing' || (creature as any).isDashing || (isSelected && currentSpace)) && canDash;
 
+        // Food eaten event detection & comic popups
+        const prevFood = prevFoodEatenMapRef.current.get(creature.id);
+        const currentFoodCount = creature.foodEaten ?? 0;
+        if (prevFood !== undefined && currentFoodCount > prevFood) {
+          const comicTexts = ['YUM! 😋', 'NOM NOM! 🍎', 'CRUNCH! ⭐', 'SWEET! 💖', 'TASTY! ✨', 'CHOMP! 🍓'];
+          const chosenText = comicTexts[Math.floor(Math.random() * comicTexts.length)];
+
+          // Spawn comic text popup!
+          boostParticlesRef.current.push({
+            x: currentX,
+            y: currentY - 0.6,
+            vx: (Math.random() - 0.5) * 0.4,
+            vy: -1.4,
+            life: 650,
+            maxLife: 650,
+            size: 16,
+            color: '#facc15',
+            type: 'comic_text',
+            text: chosenText,
+          });
+
+          // Confetti and stars explosion
+          const confColors = ['#f43f5e', '#a855f7', '#3b82f6', '#10b981', '#facc15', '#ec4899', '#38bdf8'];
+          const numConfetti = isCartoonTheme ? 16 : 8;
+          for (let ci = 0; ci < numConfetti; ci++) {
+            const ang = (ci / numConfetti) * Math.PI * 2 + Math.random() * 0.4;
+            const spd = 1.2 + Math.random() * 2.5;
+            boostParticlesRef.current.push({
+              x: currentX,
+              y: currentY,
+              vx: Math.cos(ang) * spd,
+              vy: Math.sin(ang) * spd - 0.8,
+              life: 450 + Math.random() * 300,
+              maxLife: 600,
+              size: isCartoonTheme ? 5 + Math.random() * 4 : 3 + Math.random() * 3,
+              color: confColors[ci % confColors.length],
+              type: isCartoonTheme ? (Math.random() > 0.4 ? 'star' : 'confetti') : 'spark',
+              rot: Math.random() * Math.PI * 2,
+              vRot: (Math.random() - 0.5) * 12,
+            });
+          }
+
+          if (isCartoonTheme) {
+            soundFx.playCartoonChomp();
+          }
+        }
+        prevFoodEatenMapRef.current.set(creature.id, currentFoodCount);
+
+        // Dashing transition detection
+        const wasDashing = prevDashingMapRef.current.get(creature.id) || false;
+        if (isDashing && !wasDashing && isCartoonTheme) {
+          boostParticlesRef.current.push({
+            x: currentX,
+            y: currentY - 0.5,
+            vx: 0,
+            vy: -1.5,
+            life: 550,
+            maxLife: 550,
+            size: 17,
+            color: '#f97316',
+            type: 'comic_text',
+            text: 'ZOOM! 💨',
+          });
+          soundFx.playSlideWhistle('up');
+        }
+        prevDashingMapRef.current.set(creature.id, isDashing);
+
+        // Braking transition detection
+        const isCreatureBraking = creature.isBraking || creature.state === 'braking' || (isSelected && isBrakingRef.current);
+        const wasBraking = prevBrakingMapRef.current.get(creature.id) || false;
+        if (isCreatureBraking && !wasBraking && isCartoonTheme) {
+          boostParticlesRef.current.push({
+            x: currentX,
+            y: currentY - 0.4,
+            vx: 0,
+            vy: -1.2,
+            life: 500,
+            maxLife: 500,
+            size: 16,
+            color: '#f43f5e',
+            type: 'comic_text',
+            text: 'SKID! 🛑',
+          });
+          soundFx.playCartoonSkid();
+        }
+        prevBrakingMapRef.current.set(creature.id, isCreatureBraking);
+
+        // Sleeping creature ZZZ particles in Cartoon Mode
+        if (creature.isSleeping && isCartoonTheme && Math.random() < 0.06) {
+          boostParticlesRef.current.push({
+            x: currentX + (Math.random() - 0.5) * 0.3,
+            y: currentY - 0.3,
+            vx: (Math.random() - 0.5) * 0.2 + 0.2,
+            vy: -0.6 - Math.random() * 0.4,
+            life: 800,
+            maxLife: 800,
+            size: 14 + Math.random() * 4,
+            color: '#818cf8',
+            type: 'sleep_z',
+            text: 'Z',
+          });
+        }
+
         let cTrail = trailsRef.current.get(creature.id);
         if (!cTrail) {
           cTrail = [];
@@ -860,7 +1205,7 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
         // Spawn dynamic boost wake particles when accelerating
         if (isDashing) {
           const rearAngleRad = ((currentAngle + 180) * Math.PI) / 180;
-          const numParticles = currentGridTheme === 'notebook' ? 2 : 4;
+          const numParticles = isCartoonTheme ? 5 : currentGridTheme === 'notebook' ? 2 : 4;
           for (let p = 0; p < numParticles; p++) {
             const spread = (Math.random() - 0.5) * 0.8;
             const spd = 0.8 + Math.random() * 2.2;
@@ -869,8 +1214,11 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
             const life = 180 + Math.random() * 260;
 
             let pColor = '#f59e0b';
-            let pType: 'flame' | 'spark' | 'ink' | 'shockwave' = 'flame';
-            if (currentGridTheme === 'notebook') {
+            let pType: BoostParticle['type'] = 'flame';
+            if (isCartoonTheme) {
+              pType = Math.random() > 0.4 ? 'puff' : 'star';
+              pColor = Math.random() > 0.5 ? '#facc15' : (creature.color || '#ec4899');
+            } else if (currentGridTheme === 'notebook') {
               pType = 'ink';
               pColor = Math.random() > 0.4 ? '#1e293b' : '#3b82f6';
             } else if (currentGridTheme === 'blueprint') {
@@ -888,9 +1236,11 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
               vy,
               life,
               maxLife: life,
-              size: 3 + Math.random() * 4.5,
+              size: isCartoonTheme ? 6 + Math.random() * 6 : 3 + Math.random() * 4.5,
               color: pColor,
               type: pType,
+              rot: Math.random() * Math.PI * 2,
+              vRot: (Math.random() - 0.5) * 10,
             });
           }
 
@@ -903,7 +1253,7 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
               life: 280,
               maxLife: 280,
               size: 10,
-              color: currentGridTheme === 'notebook' ? 'rgba(30, 41, 59, 0.45)' : 'rgba(245, 158, 11, 0.65)',
+              color: isCartoonTheme ? 'rgba(236, 72, 153, 0.7)' : currentGridTheme === 'notebook' ? 'rgba(30, 41, 59, 0.45)' : 'rgba(245, 158, 11, 0.65)',
               type: 'shockwave',
             });
           }
@@ -934,7 +1284,38 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
           };
 
           ctx.save();
-          if (currentGridTheme === 'notebook') {
+          if (isCartoonTheme) {
+            // Rainbow Candy / Comic Ribbon Trail!
+            const widthFactor = i / cTrail.length;
+            const rainbowColors = ['#f43f5e', '#fb923c', '#facc15', '#4ade80', '#38bdf8', '#a855f7', '#ec4899'];
+            const segColor = rainbowColors[i % rainbowColors.length];
+            const baseWidth = p1.isDashing ? 16 : 9;
+
+            // Outer dark comic stroke
+            ctx.beginPath();
+            ctx.moveTo(screenP1.x, screenP1.y);
+            ctx.lineTo(screenP2.x, screenP2.y);
+            ctx.lineWidth = Math.max(1, (baseWidth + 3) * widthFactor * currentZoom);
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = `rgba(15, 23, 42, ${alpha * 0.4})`;
+            ctx.stroke();
+
+            // Inner vibrant rainbow stripe
+            ctx.beginPath();
+            ctx.moveTo(screenP1.x, screenP1.y);
+            ctx.lineTo(screenP2.x, screenP2.y);
+            ctx.lineWidth = Math.max(1, baseWidth * widthFactor * currentZoom);
+            ctx.strokeStyle = p1.isDashing ? segColor : `${segColor}${Math.round(alpha * 220).toString(16).padStart(2, '0')}`;
+            ctx.stroke();
+
+            // Highlight glint line
+            ctx.beginPath();
+            ctx.moveTo(screenP1.x, screenP1.y);
+            ctx.lineTo(screenP2.x, screenP2.y);
+            ctx.lineWidth = Math.max(1, 2.5 * widthFactor * currentZoom);
+            ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.85})`;
+            ctx.stroke();
+          } else if (currentGridTheme === 'notebook') {
             // Hand-drawn sketch speed trails (Чернильный / карандашный шлейф)
             ctx.beginPath();
             ctx.moveTo(screenP1.x, screenP1.y);
@@ -1006,7 +1387,88 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
         const py = currentOffset.y + pt.y * scaledCell;
 
         ctx.save();
-        if (pt.type === 'shockwave') {
+        if (pt.type === 'comic_text' && pt.text) {
+          const scale = 1 + (1 - progress) * 0.3;
+          ctx.translate(px, py);
+          ctx.scale(scale * currentZoom, scale * currentZoom);
+          ctx.globalAlpha = Math.min(1, progress * 1.5);
+
+          ctx.font = '900 15px "Arial Black", "Impact", system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+
+          ctx.strokeStyle = '#0f172a';
+          ctx.lineWidth = 4;
+          ctx.lineJoin = 'miter';
+          ctx.strokeText(pt.text, 0, 0);
+
+          ctx.fillStyle = pt.color || '#facc15';
+          ctx.fillText(pt.text, 0, 0);
+        } else if (pt.type === 'sleep_z') {
+          const wobble = Math.sin(pt.life * 0.015) * 6 * currentZoom;
+          ctx.translate(px + wobble, py);
+          ctx.globalAlpha = progress * 0.9;
+          ctx.font = `bold ${pt.size * currentZoom}px "Comic Sans MS", system-ui, sans-serif`;
+          ctx.fillStyle = '#818cf8';
+          ctx.strokeStyle = '#312e81';
+          ctx.lineWidth = 2;
+          ctx.strokeText('Z', 0, 0);
+          ctx.fillText('Z', 0, 0);
+        } else if (pt.type === 'star') {
+          ctx.translate(px, py);
+          if (pt.rot !== undefined) ctx.rotate(pt.rot);
+          if (pt.vRot !== undefined) pt.rot = (pt.rot || 0) + pt.vRot * 0.016;
+          ctx.globalAlpha = progress;
+
+          const r = pt.size * currentZoom;
+          ctx.beginPath();
+          for (let s = 0; s < 5; s++) {
+            const outerA = (s * Math.PI * 2) / 5 - Math.PI / 2;
+            const innerA = outerA + Math.PI / 5;
+            if (s === 0) ctx.moveTo(Math.cos(outerA) * r, Math.sin(outerA) * r);
+            else ctx.lineTo(Math.cos(outerA) * r, Math.sin(outerA) * r);
+            ctx.lineTo(Math.cos(innerA) * (r * 0.45), Math.sin(innerA) * (r * 0.45));
+          }
+          ctx.closePath();
+          ctx.fillStyle = pt.color;
+          ctx.fill();
+          ctx.strokeStyle = '#0f172a';
+          ctx.lineWidth = 1.2 * currentZoom;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(0, 0, r * 0.25, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+        } else if (pt.type === 'confetti') {
+          ctx.translate(px, py);
+          if (pt.rot !== undefined) ctx.rotate(pt.rot);
+          if (pt.vRot !== undefined) pt.rot = (pt.rot || 0) + pt.vRot * 0.016;
+          ctx.globalAlpha = progress;
+
+          const cw = pt.size * currentZoom;
+          const ch = pt.size * 0.6 * currentZoom;
+          ctx.fillStyle = pt.color;
+          ctx.fillRect(-cw / 2, -ch / 2, cw, ch);
+          ctx.strokeStyle = '#0f172a';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(-cw / 2, -ch / 2, cw, ch);
+        } else if (pt.type === 'puff') {
+          ctx.translate(px, py);
+          ctx.globalAlpha = progress * 0.85;
+          const pr = pt.size * (1.6 - progress * 0.6) * currentZoom;
+
+          ctx.fillStyle = '#ffffff';
+          ctx.strokeStyle = 'rgba(15, 23, 42, 0.5)';
+          ctx.lineWidth = 1.5 * currentZoom;
+
+          ctx.beginPath();
+          ctx.arc(0, 0, pr * 0.7, 0, Math.PI * 2);
+          ctx.arc(pr * 0.4, -pr * 0.2, pr * 0.5, 0, Math.PI * 2);
+          ctx.arc(-pr * 0.4, -pr * 0.2, pr * 0.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        } else if (pt.type === 'shockwave') {
           const currentRadius = (pt.size + (1 - progress) * 22) * currentZoom;
           ctx.beginPath();
           ctx.arc(px, py, currentRadius, 0, Math.PI * 2);
@@ -1129,7 +1591,128 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
 
             if (el.type === 'head' || el.type === 'head-jaw') {
               const isJaw = el.type === 'head-jaw';
-              if (isGameTheme) {
+
+              if (isCartoonTheme) {
+                // --- ULTRA-CARTOON CUTE HEAD WITH GOOGLY EYES & EMOTIONS ---
+                const headR = (isJaw ? 17 : 15) * currentZoom;
+
+                // Outer bold comic stroke
+                ctx.beginPath();
+                ctx.arc(0, 0, headR, 0, Math.PI * 2);
+                ctx.fillStyle = isJaw ? '#f43f5e' : (creature.color || '#ec4899');
+                ctx.fill();
+                ctx.strokeStyle = '#0f172a';
+                ctx.lineWidth = 3.5 * currentZoom;
+                ctx.stroke();
+
+                // Glossy bubble highlight
+                ctx.beginPath();
+                ctx.arc(-headR * 0.35, -headR * 0.35, headR * 0.3, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+                ctx.fill();
+
+                // Predatory teeth & chomping animation
+                if (isJaw) {
+                  const chompOffset = Math.sin(now * 0.015) * 2 * currentZoom;
+                  ctx.fillStyle = '#ffffff';
+                  for (let t = -2; t <= 2; t++) {
+                    const tx = t * 4.8 * currentZoom;
+                    ctx.beginPath();
+                    ctx.moveTo(tx - 2.5 * currentZoom, -headR + 2 * currentZoom);
+                    ctx.lineTo(tx, -headR - (6 * currentZoom + chompOffset));
+                    ctx.lineTo(tx + 2.5 * currentZoom, -headR + 2 * currentZoom);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.strokeStyle = '#0f172a';
+                    ctx.lineWidth = 1.2 * currentZoom;
+                    ctx.stroke();
+                  }
+                }
+
+                // Eyelid blink cycle
+                const idSeed = parseInt(creature.id.replace(/\D/g, '') || '1', 10);
+                const blinkCycle = (now + idSeed * 500) % 3200;
+                const isBlinking = blinkCycle < 180 || creature.isSleeping;
+
+                const eyeR = (isJaw ? 6.5 : 6) * currentZoom;
+                const pupilR = (isJaw ? 3.5 : 3) * currentZoom;
+
+                // Two big expressive googly eyes
+                [-5.5, 5.5].forEach((eyeOffsetX) => {
+                  const ex = eyeOffsetX * currentZoom;
+                  const ey = -5 * currentZoom;
+
+                  // Eye white
+                  ctx.beginPath();
+                  ctx.arc(ex, ey, eyeR, 0, Math.PI * 2);
+                  ctx.fillStyle = isJaw ? '#fef08a' : '#ffffff';
+                  ctx.fill();
+                  ctx.strokeStyle = '#0f172a';
+                  ctx.lineWidth = 1.8 * currentZoom;
+                  ctx.stroke();
+
+                  if (isBlinking) {
+                    // Closed sleeping / blinking cute eyelid arc ⌒
+                    ctx.beginPath();
+                    ctx.arc(ex, ey, eyeR * 0.85, Math.PI * 0.15, Math.PI * 0.85);
+                    ctx.strokeStyle = '#0f172a';
+                    ctx.lineWidth = 2.2 * currentZoom;
+                    ctx.stroke();
+                  } else {
+                    // Large cartoon pupil with double catchlights
+                    const pupilX = ex + (isJaw ? (eyeOffsetX < 0 ? 0.8 : -0.8) : 0) * currentZoom;
+                    const pupilY = ey - 0.5 * currentZoom;
+
+                    ctx.beginPath();
+                    ctx.arc(pupilX, pupilY, pupilR, 0, Math.PI * 2);
+                    ctx.fillStyle = isJaw ? '#991b1b' : '#0f172a';
+                    ctx.fill();
+
+                    // Main sparkle glint
+                    ctx.beginPath();
+                    ctx.arc(pupilX - 1.2 * currentZoom, pupilY - 1.2 * currentZoom, 1.4 * currentZoom, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fill();
+
+                    // Secondary tiny sparkle glint
+                    ctx.beginPath();
+                    ctx.arc(pupilX + 1 * currentZoom, pupilY + 1 * currentZoom, 0.7 * currentZoom, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fill();
+                  }
+                });
+
+                // Rosy pink blush cheeks on non-predator creatures
+                if (!isJaw) {
+                  ctx.fillStyle = 'rgba(244, 114, 182, 0.75)';
+                  ctx.beginPath();
+                  ctx.arc(-8 * currentZoom, 1 * currentZoom, 2.2 * currentZoom, 0, Math.PI * 2);
+                  ctx.arc(8 * currentZoom, 1 * currentZoom, 2.2 * currentZoom, 0, Math.PI * 2);
+                  ctx.fill();
+
+                  // Big happy open smile :D
+                  ctx.beginPath();
+                  ctx.arc(0, 1 * currentZoom, 3.5 * currentZoom, 0, Math.PI);
+                  ctx.strokeStyle = '#0f172a';
+                  ctx.lineWidth = 1.8 * currentZoom;
+                  ctx.stroke();
+                  ctx.fillStyle = '#f43f5e';
+                  ctx.fill();
+                } else {
+                  // Slanted angry comic eyebrows for predators (｀ω´)
+                  ctx.strokeStyle = '#0f172a';
+                  ctx.lineWidth = 2 * currentZoom;
+                  ctx.beginPath();
+                  ctx.moveTo(-9 * currentZoom, -10 * currentZoom);
+                  ctx.lineTo(-2 * currentZoom, -7 * currentZoom);
+                  ctx.stroke();
+
+                  ctx.beginPath();
+                  ctx.moveTo(9 * currentZoom, -10 * currentZoom);
+                  ctx.lineTo(2 * currentZoom, -7 * currentZoom);
+                  ctx.stroke();
+                }
+              } else if (isGameTheme) {
                 const headR = (isJaw ? 16 : 14) * currentZoom;
                 ctx.beginPath();
                 ctx.arc(0, 0, headR, 0, Math.PI * 2);
@@ -1142,7 +1725,6 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
                 // Predatory sharp teeth if jaw
                 if (isJaw) {
                   ctx.fillStyle = '#ffffff';
-                  // Front predatory fangs
                   const toothSize = 5 * currentZoom;
                   for (let t = -2; t <= 2; t++) {
                     const tx = t * 4.5 * currentZoom;
@@ -1210,7 +1792,6 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
                 ctx.stroke();
 
                 if (isJaw) {
-                  // Draw blueprint/ink teeth
                   ctx.fillStyle = '#ef4444';
                   for (let t = -2; t <= 2; t++) {
                     const tx = t * 4 * currentZoom;
@@ -1233,7 +1814,22 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
                 ctx.fill();
               }
             } else if (el.type === 'joint') {
-              if (isGameTheme) {
+              if (isCartoonTheme) {
+                const jointR = 10 * currentZoom;
+                ctx.beginPath();
+                ctx.arc(0, 0, jointR, 0, Math.PI * 2);
+                ctx.fillStyle = '#06b6d4';
+                ctx.fill();
+                ctx.strokeStyle = '#0f172a';
+                ctx.lineWidth = 2.8 * currentZoom;
+                ctx.stroke();
+
+                // Gloss reflection
+                ctx.beginPath();
+                ctx.arc(-jointR * 0.35, -jointR * 0.35, jointR * 0.3, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                ctx.fill();
+              } else if (isGameTheme) {
                 const jointR = 9 * currentZoom;
                 ctx.beginPath();
                 ctx.arc(0, 0, jointR, 0, Math.PI * 2);
@@ -1268,22 +1864,51 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
               else if (el.type === 'edge-d1') { x1 = -scaledCell / 2; y1 = scaledCell / 2; x2 = scaledCell / 2; y2 = -scaledCell / 2; }
               else if (el.type === 'edge-d2') { x1 = -scaledCell / 2; y1 = -scaledCell / 2; x2 = scaledCell / 2; y2 = scaledCell / 2; }
 
-              ctx.beginPath();
-              ctx.moveTo(x1, y1);
-              ctx.lineTo(x2, y2);
-              ctx.strokeStyle = creature.color || '#3b82f6';
-              ctx.lineWidth = (isGameTheme ? 7.5 : 3.5) * currentZoom;
-              ctx.lineCap = 'round';
-              ctx.stroke();
-
-              if (isGameTheme) {
+              if (isCartoonTheme) {
+                // Outer bold comic stroke
                 ctx.beginPath();
                 ctx.moveTo(x1, y1);
                 ctx.lineTo(x2, y2);
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
-                ctx.lineWidth = 2.5 * currentZoom;
+                ctx.strokeStyle = '#0f172a';
+                ctx.lineWidth = 9.5 * currentZoom;
                 ctx.lineCap = 'round';
                 ctx.stroke();
+
+                // Inner candy color
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.strokeStyle = creature.color || '#3b82f6';
+                ctx.lineWidth = 6.2 * currentZoom;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                // Glossy reflection line
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+                ctx.lineWidth = 2 * currentZoom;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+              } else {
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.strokeStyle = creature.color || '#3b82f6';
+                ctx.lineWidth = (isGameTheme ? 7.5 : 3.5) * currentZoom;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                if (isGameTheme) {
+                  ctx.beginPath();
+                  ctx.moveTo(x1, y1);
+                  ctx.lineTo(x2, y2);
+                  ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+                  ctx.lineWidth = 2.5 * currentZoom;
+                  ctx.lineCap = 'round';
+                  ctx.stroke();
+                }
               }
             } else if (el.type.startsWith('muscle-')) {
               const isLeft = el.type.includes('left');
@@ -1305,34 +1930,65 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
               const flex = 1.2 - 0.6 * muscleFlexFactor;
               const sign = isLeft ? -1 : 1;
 
-              ctx.beginPath();
-              ctx.moveTo(0, 0);
-              ctx.quadraticCurveTo(sign * 14 * currentZoom * flex, 10 * currentZoom, sign * 20 * currentZoom, 0);
-
-              if (el.type === 'muscle-left') ctx.strokeStyle = '#f43f5e';
-              else if (el.type === 'muscle-right') ctx.strokeStyle = '#a855f7';
-              else if (el.type === 'muscle-random-left') ctx.strokeStyle = isFlexed ? '#ff8c00' : '#f97316';
-              else if (el.type === 'muscle-random-right') ctx.strokeStyle = isFlexed ? '#e024c3' : '#d946ef';
-
-              ctx.lineWidth = (isFlexed ? 4.5 : 3) * currentZoom;
-              if (isRandom) {
-                ctx.setLineDash([4 * currentZoom, 2 * currentZoom]);
-              }
-              ctx.stroke();
-              ctx.setLineDash([]);
-
-              if (isRandom && isJustFlexed) {
+              if (isCartoonTheme) {
+                // Cartoon bouncy coiled spring!
                 ctx.beginPath();
-                ctx.arc(sign * 12 * currentZoom, 4 * currentZoom, 5 * currentZoom, 0, Math.PI * 2);
-                ctx.fillStyle = isLeft ? '#ff8c00' : '#e024c3';
-                ctx.fill();
-              }
+                ctx.moveTo(0, 0);
+                ctx.quadraticCurveTo(sign * 16 * currentZoom * flex, 10 * currentZoom, sign * 22 * currentZoom, 0);
 
-              if (isRandom && el.randomChance) {
-                ctx.fillStyle = isFlexed ? '#ffffff' : (isLeft ? '#f97316' : '#d946ef');
-                ctx.font = `bold ${Math.max(8, 9 * currentZoom)}px monospace`;
-                ctx.textAlign = 'center';
-                ctx.fillText(`🎲${el.randomChance}%`, sign * 14 * currentZoom, 18 * currentZoom);
+                ctx.strokeStyle = '#0f172a';
+                ctx.lineWidth = (isFlexed ? 6 : 4.5) * currentZoom;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.quadraticCurveTo(sign * 16 * currentZoom * flex, 10 * currentZoom, sign * 22 * currentZoom, 0);
+
+                if (el.type === 'muscle-left') ctx.strokeStyle = '#f43f5e';
+                else if (el.type === 'muscle-right') ctx.strokeStyle = '#a855f7';
+                else if (el.type === 'muscle-random-left') ctx.strokeStyle = isFlexed ? '#fbbf24' : '#f97316';
+                else if (el.type === 'muscle-random-right') ctx.strokeStyle = isFlexed ? '#f472b6' : '#d946ef';
+
+                ctx.lineWidth = (isFlexed ? 4 : 2.8) * currentZoom;
+                ctx.stroke();
+
+                if (isRandom && el.randomChance) {
+                  ctx.fillStyle = '#0f172a';
+                  ctx.font = `900 ${Math.max(9, 10 * currentZoom)}px "Comic Sans MS", system-ui, sans-serif`;
+                  ctx.textAlign = 'center';
+                  ctx.fillText(`🎲${el.randomChance}%`, sign * 14 * currentZoom, 18 * currentZoom);
+                }
+              } else {
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.quadraticCurveTo(sign * 14 * currentZoom * flex, 10 * currentZoom, sign * 20 * currentZoom, 0);
+
+                if (el.type === 'muscle-left') ctx.strokeStyle = '#f43f5e';
+                else if (el.type === 'muscle-right') ctx.strokeStyle = '#a855f7';
+                else if (el.type === 'muscle-random-left') ctx.strokeStyle = isFlexed ? '#ff8c00' : '#f97316';
+                else if (el.type === 'muscle-random-right') ctx.strokeStyle = isFlexed ? '#e024c3' : '#d946ef';
+
+                ctx.lineWidth = (isFlexed ? 4.5 : 3) * currentZoom;
+                if (isRandom) {
+                  ctx.setLineDash([4 * currentZoom, 2 * currentZoom]);
+                }
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                if (isRandom && isJustFlexed) {
+                  ctx.beginPath();
+                  ctx.arc(sign * 12 * currentZoom, 4 * currentZoom, 5 * currentZoom, 0, Math.PI * 2);
+                  ctx.fillStyle = isLeft ? '#ff8c00' : '#e024c3';
+                  ctx.fill();
+                }
+
+                if (isRandom && el.randomChance) {
+                  ctx.fillStyle = isFlexed ? '#ffffff' : (isLeft ? '#f97316' : '#d946ef');
+                  ctx.font = `bold ${Math.max(8, 9 * currentZoom)}px monospace`;
+                  ctx.textAlign = 'center';
+                  ctx.fillText(`🎲${el.randomChance}%`, sign * 14 * currentZoom, 18 * currentZoom);
+                }
               }
             }
 
@@ -1346,7 +2002,6 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
           ctx.translate(centerPos.x, centerPos.y);
 
           // Calculate stable upper bounding boundary of all rotated body elements
-          // Using base rest positions with maximum wing-span margins to prevent frame-by-frame jumping when wings flap
           const rotRad = (rotationDelta * Math.PI) / 180;
           const cosR = Math.cos(rotRad);
           const sinR = Math.sin(rotRad);
@@ -1354,13 +2009,10 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
           let targetMinRelY = -28 * currentZoom;
 
           creature.elements.forEach((el) => {
-            // Using rest skeleton position (el.relX, el.relY) prevents oscillatory jittering during muscle contractions
             const elX = el.relX * scaledCell;
             const elY = el.relY * scaledCell;
-            // Screen Y relative to centerPos
             const screenY = elX * sinR + elY * cosR;
 
-            // Generous allowance for maximum wing/muscle extension and geometry
             let elemHalfSize = 16 * currentZoom;
             if (el.type.startsWith('edge-') || el.type.startsWith('muscle-')) {
               elemHalfSize = Math.max(22 * currentZoom, scaledCell * 0.72);
@@ -1376,7 +2028,6 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
             }
           });
 
-          // Account for selection circle and boost flame if active
           if (isSelected) {
             targetMinRelY = Math.min(targetMinRelY, -40 * currentZoom);
           }
@@ -1384,13 +2035,11 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
             targetMinRelY = Math.min(targetMinRelY, -44 * currentZoom);
           }
 
-          // Smoothly interpolate HUD Y offset across frames (exponential damping) to make turning seamlessly smooth
           const prevSmoothedY = smoothedHudYRef.current.get(creature.id) ?? targetMinRelY;
           const hudSmoothingFactor = 1 - Math.exp(-16 * dt);
           const smoothedMinRelY = prevSmoothedY + (targetMinRelY - prevSmoothedY) * hudSmoothingFactor;
           smoothedHudYRef.current.set(creature.id, smoothedMinRelY);
 
-          // Safe base Y coordinate strictly above creature body
           const safeTopY = smoothedMinRelY - 8 * currentZoom;
           const energyBarY = safeTopY - 4 * currentZoom;
 
@@ -1399,7 +2048,63 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
           const currentDisplaySpeed = (f.forwardSpeed * boostMultiplier).toFixed(2);
           const isCreatureBraking = creature.isBraking || creature.state === 'braking' || (isSelected && isBrakingRef.current);
 
-          if (isGameTheme) {
+          if (isCartoonTheme) {
+            // --- CARTOON SPEECH BUBBLE CLOUD HUD ---
+            const brakeTag = isCreatureBraking ? ' 🛑[СТОП]' : '';
+            const sleepTag = creature.isSleeping && !isCreatureBraking ? ' 💤' : '';
+            const baseTag = creature.inBase ? ' 🏰[ДОМИК]' : '';
+            const titleText = `🦄 ${creature.name}${brakeTag}${sleepTag}${baseTag}`;
+            const speedStr = isCreatureBraking
+              ? '🛑 ТОРМОЗ'
+              : isDashing
+              ? `🚀 ${currentDisplaySpeed} (BOOST!)`
+              : `Скор: ${currentDisplaySpeed}`;
+            const bankStr = creature.inBase ? ` (🏦 ${creature.bankFood || 0})` : '';
+            const statsText = `Вес: ${f.totalMass.toFixed(1)}  •  ${speedStr}  •  🍓 ${creature.foodEaten || 0}${bankStr}`;
+
+            ctx.font = `900 ${Math.max(11, 13 * currentZoom)}px "Comic Sans MS", "Arial Black", system-ui, sans-serif`;
+            const titleW = ctx.measureText(titleText).width;
+            ctx.font = `bold ${Math.max(9, 10.5 * currentZoom)}px system-ui, sans-serif`;
+            const statsW = ctx.measureText(statsText).width;
+
+            const badgeW = Math.max(titleW, statsW) + 24 * currentZoom;
+            const badgeH = 36 * currentZoom;
+            const badgeY = energyBarY - 6 * currentZoom - badgeH;
+
+            // Speech Bubble Cloud Background
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+            ctx.strokeStyle = '#0f172a';
+            ctx.lineWidth = 2.5 * currentZoom;
+
+            ctx.beginPath();
+            if (typeof ctx.roundRect === 'function') {
+              ctx.roundRect(-badgeW / 2, badgeY, badgeW, badgeH, 10 * currentZoom);
+            } else {
+              ctx.rect(-badgeW / 2, badgeY, badgeW, badgeH);
+            }
+            ctx.fill();
+            ctx.stroke();
+
+            // Speech bubble tail
+            ctx.beginPath();
+            ctx.moveTo(-4 * currentZoom, badgeY + badgeH);
+            ctx.lineTo(0, badgeY + badgeH + 4 * currentZoom);
+            ctx.lineTo(4 * currentZoom, badgeY + badgeH);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+
+            // Title Text
+            ctx.fillStyle = isCreatureBraking ? '#f43f5e' : (creature.inBase ? '#db2777' : '#0f172a');
+            ctx.font = `900 ${Math.max(11, 13 * currentZoom)}px "Comic Sans MS", "Arial Black", system-ui, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText(titleText, 0, badgeY + 4 * currentZoom);
+
+            // Stats Text
+            ctx.font = `bold ${Math.max(9, 10.5 * currentZoom)}px system-ui, sans-serif`;
+            ctx.fillStyle = isCreatureBraking ? '#e11d48' : (isDashing ? '#ea580c' : '#7c3aed');
+            ctx.fillText(statsText, 0, badgeY + 20 * currentZoom);
+          } else if (isGameTheme) {
             // Game Mode HUD Badge: Displays Creature Name, Mass, Speed and Food Count
             const brakeTag = isCreatureBraking ? ' 🛑[СТОП]' : '';
             const sleepTag = creature.isSleeping && !isCreatureBraking ? ' 💤' : '';
@@ -1451,7 +2156,6 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
             const statsY = energyBarY - 6 * currentZoom;
             const nameY = statsY - 14 * currentZoom;
 
-            // Speed indicator dynamically highlights with 1.6x multiplier when boost is active!
             const speedLabel = isCreatureBraking ? '🛑СТОП [N]' : (isDashing ? `v:${currentDisplaySpeed} ⚡x1.6` : `v:${currentDisplaySpeed}`);
             const baseTag = creature.inBase ? ' 🛡️[БАЗА]' : '';
             const brakeTag = isCreatureBraking ? ' 🛑[СТОП]' : '';

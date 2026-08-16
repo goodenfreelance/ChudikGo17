@@ -24,6 +24,14 @@ export default function App() {
   const [autoFood, setAutoFood] = useState<boolean>(true);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [gridTheme, setGridTheme] = useState<GridTheme>('notebook');
+
+  useEffect(() => {
+    soundFx.enabled = soundEnabled;
+  }, [soundEnabled]);
+
+  useEffect(() => {
+    soundFx.setCartoonMode(gridTheme === 'cartoon');
+  }, [gridTheme]);
   const [showNodes, setShowNodes] = useState<boolean>(true);
   const [selectedCreatureId, setSelectedCreatureId] = useState<string | null>('c-1');
   const [editingCreatureId, setEditingCreatureId] = useState<string | null>(null);

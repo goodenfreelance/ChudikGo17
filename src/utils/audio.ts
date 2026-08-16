@@ -1,7 +1,8 @@
-// Web Audio synthesizer for tactile sound effects
+// Web Audio synthesizer for tactile and cartoon sound effects
 class SoundEngine {
   private ctx: AudioContext | null = null;
   public enabled: boolean = true;
+  public isCartoonMode: boolean = false;
 
   private getContext(): AudioContext | null {
     if (!this.enabled) return null;
@@ -17,7 +18,15 @@ class SoundEngine {
     return this.ctx;
   }
 
+  setCartoonMode(isCartoon: boolean) {
+    this.isCartoonMode = isCartoon;
+  }
+
   playStep() {
+    if (this.isCartoonMode) {
+      this.playCartoonTap();
+      return;
+    }
     const ctx = this.getContext();
     if (!ctx) return;
     try {
@@ -42,14 +51,26 @@ class SoundEngine {
   }
 
   playFlex() {
+    if (this.isCartoonMode) {
+      this.playBoing();
+      return;
+    }
     this.playStep();
   }
 
   playTurn() {
+    if (this.isCartoonMode) {
+      this.playCartoonWiggle();
+      return;
+    }
     this.playStep();
   }
 
   playEat() {
+    if (this.isCartoonMode) {
+      this.playCartoonChomp();
+      return;
+    }
     const ctx = this.getContext();
     if (!ctx) return;
     try {
@@ -89,6 +110,10 @@ class SoundEngine {
   }
 
   playSpawnFood() {
+    if (this.isCartoonMode) {
+      this.playCartoonPop();
+      return;
+    }
     const ctx = this.getContext();
     if (!ctx) return;
     try {
@@ -114,6 +139,10 @@ class SoundEngine {
   }
 
   playEvolve() {
+    if (this.isCartoonMode) {
+      this.playCartoonFanfare();
+      return;
+    }
     const ctx = this.getContext();
     if (!ctx) return;
     try {
@@ -139,6 +168,10 @@ class SoundEngine {
   }
 
   playCollide() {
+    if (this.isCartoonMode) {
+      this.playCartoonBonk();
+      return;
+    }
     const ctx = this.getContext();
     if (!ctx) return;
     try {
@@ -162,6 +195,284 @@ class SoundEngine {
       // Ignore audio errors
     }
   }
+
+  // --- SPECIFIC CARTOON SOUND EFFECTS ---
+
+  // Classic Cartoon Spring / Boing sound (пружинка БОИНГ!)
+  playBoing() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      // Pitch vibrato / wobble for spring effect
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(260, now);
+      osc.frequency.exponentialRampToValueAtTime(780, now + 0.08);
+      osc.frequency.exponentialRampToValueAtTime(340, now + 0.18);
+      osc.frequency.exponentialRampToValueAtTime(560, now + 0.28);
+      osc.frequency.exponentialRampToValueAtTime(300, now + 0.38);
+
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.4);
+    } catch {
+      // Ignore
+    }
+  }
+
+  // Joyful Squeaky Cartoon Bite / Chomp (НЯМ-НЯМ!)
+  playCartoonChomp() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      // High cute bubble pop
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(650, now);
+      osc1.frequency.exponentialRampToValueAtTime(1400, now + 0.06);
+      osc1.frequency.exponentialRampToValueAtTime(950, now + 0.12);
+
+      gain1.gain.setValueAtTime(0.22, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.14);
+
+      // Sweet juicy second pop
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(900, now + 0.05);
+      osc2.frequency.exponentialRampToValueAtTime(1600, now + 0.11);
+
+      gain2.gain.setValueAtTime(0.15, now + 0.05);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.05);
+      osc2.stop(now + 0.16);
+    } catch {
+      // Ignore
+    }
+  }
+
+  // Cartoon Slide Whistle / Whoosh (ВЖУУХ!)
+  playSlideWhistle(direction: 'up' | 'down' = 'up') {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      if (direction === 'up') {
+        osc.frequency.setValueAtTime(320, now);
+        osc.frequency.exponentialRampToValueAtTime(1100, now + 0.22);
+      } else {
+        osc.frequency.setValueAtTime(950, now);
+        osc.frequency.exponentialRampToValueAtTime(280, now + 0.22);
+      }
+
+      gain.gain.setValueAtTime(0.14, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.24);
+    } catch {
+      // Ignore
+    }
+  }
+
+  // Cartoon Bonk / Squeak (БОНК! / ПИСК)
+  playCartoonBonk() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      // Hollow wooden / rubber bonk
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(580, now);
+      osc.frequency.exponentialRampToValueAtTime(140, now + 0.09);
+
+      gain.gain.setValueAtTime(0.24, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.11);
+
+      // Cute squeak follower
+      const sq = ctx.createOscillator();
+      const sqGain = ctx.createGain();
+      sq.type = 'triangle';
+      sq.frequency.setValueAtTime(1200, now + 0.04);
+      sq.frequency.exponentialRampToValueAtTime(800, now + 0.12);
+      sqGain.gain.setValueAtTime(0.1, now + 0.04);
+      sqGain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+
+      sq.connect(sqGain);
+      sqGain.connect(ctx.destination);
+      sq.start(now + 0.04);
+      sq.stop(now + 0.14);
+    } catch {
+      // Ignore
+    }
+  }
+
+  // Cartoon Pop (ПОП!)
+  playCartoonPop() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(450, now);
+      osc.frequency.exponentialRampToValueAtTime(1350, now + 0.06);
+
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.08);
+    } catch {
+      // Ignore
+    }
+  }
+
+  // Cartoon Joyful Xylophone / Fanfare
+  playCartoonFanfare() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5]; // C5, E5, G5, C6, E6
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.06);
+
+        gain.gain.setValueAtTime(0.15, now + idx * 0.06);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.06 + 0.14);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(now + idx * 0.06);
+        osc.stop(now + idx * 0.06 + 0.14);
+      });
+    } catch {
+      // Ignore
+    }
+  }
+
+  // Cartoon Skid (ВЖЖЖИК!)
+  playCartoonSkid() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(420, now);
+      osc.frequency.linearRampToValueAtTime(180, now + 0.16);
+
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.18);
+    } catch {
+      // Ignore
+    }
+  }
+
+  // Cartoon Tap
+  playCartoonTap() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(480, now);
+      osc.frequency.exponentialRampToValueAtTime(240, now + 0.035);
+
+      gain.gain.setValueAtTime(0.07, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.035);
+    } catch {
+      // Ignore
+    }
+  }
+
+  // Cartoon Wiggle
+  playCartoonWiggle() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(320, now);
+      osc.frequency.exponentialRampToValueAtTime(480, now + 0.04);
+      osc.frequency.exponentialRampToValueAtTime(340, now + 0.08);
+
+      gain.gain.setValueAtTime(0.08, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.09);
+    } catch {
+      // Ignore
+    }
+  }
 }
 
 export const soundFx = new SoundEngine();
+
