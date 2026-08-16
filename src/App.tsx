@@ -1304,6 +1304,12 @@ export default function App() {
           stats={serverStats || undefined}
           controlledCreatureId={controlledCreatureId}
           setControlledCreatureId={setControlledCreatureId}
+          onRestartPlayer={() => {
+            gameWs.sendRestart();
+            soundFx.playEvolve();
+            setToastMessage('🔄 Перезапуск игрока на Базе выполнен!');
+            setTimeout(() => setToastMessage(null), 3000);
+          }}
           onSpawnPreset={(preset) => {
             soundFx.playEvolve();
             const angle = determineCreatureHeadAngle(preset.elements);

@@ -147,6 +147,82 @@ export function calculateCreatureCost(elements: CreatureElement[]): { totalCost:
   return { totalCost, refundableCost, purchasedCount, isFreeStarter };
 }
 
+// Проверка возможности спавна / замены чудика на Базе с расчетом стоимости
+export function canSpawnCreature(
+  currentCreature: Creature | null | undefined,
+  targetElements: CreatureElement[],
+  currentFood: number = 0,
+  worldRadius: number = 50
+): {
+  allowed: boolean;
+  reason?: string;
+  targetCost: number;
+  currentCost: number;
+  totalAvailable: number;
+  newFood: number;
+} {
+  const targetCost = calculateElementsPrice(targetElements);
+
+  if (!currentCreature) {
+    // Новый игрок без чудика
+    const totalAvailable = Math.max(0, currentFood);
+    if (totalAvailable < targetCost) {
+      return {
+        allowed: false,
+        reason: `⛔ Недостаточно еды для спавна! Стоимость чудика: ${targetCost} 🍎, доступно: ${totalAvailable} 🍎. Не хватает: ${targetCost - totalAvailable} 🍎.`,
+        targetCost,
+        currentCost: 0,
+        totalAvailable,
+        newFood: currentFood,
+      };
+    }
+    return {
+      allowed: true,
+      targetCost,
+      currentCost: 0,
+      totalAvailable,
+      newFood: totalAvailable - targetCost,
+    };
+  }
+
+  const inBase = Boolean(currentCreature.inBase || isInsideBase(currentCreature.x, currentCreature.y, worldRadius));
+  if (!inBase) {
+    return {
+      allowed: false,
+      reason: '⛔ Спавн и замена чудика доступны только на БАЗЕ (Safe Zone)! Зайдите на базу.',
+      targetCost,
+      currentCost: calculateElementsPrice(currentCreature.elements),
+      totalAvailable: calculateElementsPrice(currentCreature.elements) + (currentCreature.foodEaten ?? currentFood),
+      newFood: currentFood,
+    };
+  }
+
+  const currentCost = calculateElementsPrice(currentCreature.elements);
+  const foodBalance = typeof currentCreature.foodEaten === 'number' ? currentCreature.foodEaten : currentFood;
+  const totalAvailable = currentCost + Math.max(0, foodBalance);
+
+  if (totalAvailable < targetCost) {
+    const missing = targetCost - totalAvailable;
+    return {
+      allowed: false,
+      reason: `⛔ Недостаточно еды для спавна! Стоимость чудика: ${targetCost} 🍎. Доступно: ${totalAvailable} 🍎 (в текущем чудике: ${currentCost} 🍎 + запас еды: ${foodBalance} 🍎). Не хватает: ${missing} 🍎.`,
+      targetCost,
+      currentCost,
+      totalAvailable,
+      newFood: foodBalance,
+    };
+  }
+
+  const newFood = totalAvailable - targetCost;
+  return {
+    allowed: true,
+    targetCost,
+    currentCost,
+    totalAvailable,
+    newFood,
+  };
+}
+
 // Новые пресеты чудиков, полностью соответствующие правилам: Ребра (вес 1), Шарниры (вес 0), Мышцы (крепятся только на шарниры), Голова (направление)
 export const DEFAULT_PRESETS: { name: string; description: string; elements: CreatureElement[] }[] = [
   {

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Database, Plus, Trash2, X, Play, RefreshCw, Bookmark, Sparkles, AlertCircle } from 'lucide-react';
+import { Database, Plus, Trash2, X, Play, RefreshCw, Bookmark, Sparkles, AlertCircle, Coins } from 'lucide-react';
 import { CreatureElement } from '../types';
+import { calculateElementsPrice } from '../utils/creatures';
 
 export interface SavedDBCreature {
   id: string;
@@ -153,7 +154,12 @@ export const UserCreaturesModal: React.FC<UserCreaturesModalProps> = ({
                         style={{ backgroundColor: c.color || '#6366f1' }}
                       />
                       <div>
-                        <h3 className="font-semibold text-slate-100 text-sm">{c.name}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-slate-100 text-sm">{c.name}</h3>
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-mono font-bold">
+                            🍎 {calculateElementsPrice(c.elements || [])}
+                          </span>
+                        </div>
                         <p className="text-xs text-slate-500">
                           {c.elements?.length || 0} элементов • {new Date(c.createdAt).toLocaleDateString()}
                         </p>

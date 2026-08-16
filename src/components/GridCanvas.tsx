@@ -307,8 +307,6 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
 
       if (bestMatch) {
         onSelectCreature(bestMatch.creatureId);
-      } else {
-        onNodeClick(gridPos.x, gridPos.y, false);
       }
     } else if (e.button === 2) {
       // Right click cancels placement / releases captured creature
@@ -321,8 +319,6 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
       if (selectedCreatureId) {
         onSelectCreature(null);
       }
-
-      onNodeClick(gridPos.x, gridPos.y, true);
     }
   };
 

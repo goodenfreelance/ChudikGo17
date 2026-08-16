@@ -17,6 +17,7 @@ import {
   User,
   Sparkles,
   Coins,
+  RotateCcw,
 } from 'lucide-react';
 import { gameWs, ServerStats } from '../utils/websocket';
 import { Creature, User as UserType, WorldConfig, SavedPreset } from '../types';
@@ -32,6 +33,7 @@ interface AdminPanelProps {
   onEditPreset?: (preset: SavedPreset) => void;
   controlledCreatureId: string | null;
   setControlledCreatureId: (id: string | null) => void;
+  onRestartPlayer?: () => void;
 }
 
 const DEFAULT_CONFIG: WorldConfig = {
@@ -43,6 +45,7 @@ const DEFAULT_CONFIG: WorldConfig = {
     unlimitedElements: false,
   },
   physics: {
+    maxSpeed: 1.2,
     restitutionCoefficient: 0.5,
     dashMultiplier: 1.6,
     dashFoodCostPerSecond: 1.0,
@@ -72,6 +75,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onEditPreset,
   controlledCreatureId,
   setControlledCreatureId,
+  onRestartPlayer,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'control' | 'physics' | 'economy' | 'db_creatures'>('control');
@@ -459,6 +463,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <PlusCircle className="w-4 h-4" />
                     Добавить Чудика
                   </button>
+
+                  {onRestartPlayer && (
+                    <button
+                      onClick={onRestartPlayer}
+                      className="w-full py-2 bg-rose-600/90 hover:bg-rose-600 text-white font-bold rounded-lg flex items-center justify-center gap-1.5 transition border border-rose-500/50 shadow-sm cursor-pointer"
+                      title="Обнуляет состояние игрока и возрождает заново на Базе"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      Рестарт игрока на Базе
+                    </button>
+                  )}
                 </div>
 
                 {/* 3. Player List & Kick */}
@@ -670,6 +685,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     Коэффициенты Физики
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div>
+                      <label className="text-slate-400">Макс. скорость (maxSpeed):</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0.1"
+                        max="10"
+                        value={worldConfig.physics.maxSpeed ?? 1.2}
+                        onChange={(e) =>
+                          setWorldConfig({
+                            ...worldConfig,
+                            physics: { ...worldConfig.physics, maxSpeed: Number(e.target.value) },
+                          })
+                        }
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-1 text-slate-200"
+                      />
+                    </div>
                     <div>
                       <label className="text-slate-400">Упругость (e):</label>
                       <input

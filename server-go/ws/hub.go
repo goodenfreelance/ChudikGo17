@@ -49,8 +49,8 @@ func (h *Hub) Run() {
 			if _, ok := h.clients[client.playerID]; ok {
 				delete(h.clients, client.playerID)
 				client.CloseSend()
-				h.room.RemovePlayer(client.playerID)
-				log.Printf("[WS INFO] Player disconnected: %s", client.playerID)
+				h.room.SetPlayerDisconnected(client.playerID)
+				log.Printf("[WS INFO] Player disconnected (preserved state): %s", client.playerID)
 			}
 			h.mu.Unlock()
 

@@ -143,6 +143,23 @@ func (r *Room) AddPlayer(playerID, name, color string, elements []CreatureElemen
 
 	cID := fmt.Sprintf("player-%s", playerID)
 
+	if existing, exists := r.creatures[cID]; exists && existing != nil {
+		// Player reconnected! Wake them up and preserve their live state
+		existing.IsSleeping = false
+		existing.LastActive = time.Now()
+		if name != "" {
+			existing.Name = name
+		}
+		if color != "" {
+			existing.Color = color
+		}
+		if len(elements) > 0 && len(existing.Elements) == 0 {
+			existing.Elements = elements
+			existing.Forces = CalculatePhysicsForces(elements, existing.MuscleStep)
+		}
+		return existing
+	}
+
 	if len(elements) == 0 {
 		elements = StarterPreset()
 	}
@@ -176,21 +193,13 @@ func (r *Room) AddPlayer(playerID, name, color string, elements []CreatureElemen
 	score := 0
 	energy := 100.0
 	maxEnergy := 100.0
-	if existing, exists := r.creatures[cID]; exists && existing != nil {
-		bankFood = existing.BankFood
-		foodEaten = existing.FoodEaten
-		kills = existing.Kills
-		score = existing.Score
-		energy = existing.Energy
-		maxEnergy = existing.MaxEnergy
-	} else {
-		if foodEatenParam != nil && *foodEatenParam >= 0 {
-			foodEaten = *foodEatenParam
-			bankFood = *foodEatenParam
-		}
-		if scoreParam != nil && *scoreParam >= 0 {
-			score = *scoreParam
-		}
+
+	if foodEatenParam != nil && *foodEatenParam >= 0 {
+		foodEaten = *foodEatenParam
+		bankFood = *foodEatenParam
+	}
+	if scoreParam != nil && *scoreParam >= 0 {
+		score = *scoreParam
 	}
 
 	creature := &Creature{
@@ -230,6 +239,16 @@ func (r *Room) AddPlayer(playerID, name, color string, elements []CreatureElemen
 
 	r.creatures[cID] = creature
 	return creature
+}
+
+func (r *Room) SetPlayerDisconnected(playerID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cID := fmt.Sprintf("player-%s", playerID)
+	if c, exists := r.creatures[cID]; exists && c != nil {
+		c.IsSleeping = true
+		c.LastActive = time.Now()
+	}
 }
 
 func (r *Room) DepositBankFood(playerID string, amount int) int {

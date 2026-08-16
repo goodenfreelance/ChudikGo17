@@ -61,9 +61,10 @@ export class GameWebSocket {
   private reconnectTimer: any = null;
 
   constructor() {
-    let pid = sessionStorage.getItem('creatures_player_id');
+    let pid = localStorage.getItem('creatures_player_id') || sessionStorage.getItem('creatures_player_id');
     if (!pid) {
       pid = `p-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      localStorage.setItem('creatures_player_id', pid);
       sessionStorage.setItem('creatures_player_id', pid);
     }
     this.playerId = pid;
@@ -73,7 +74,13 @@ export class GameWebSocket {
     this.url = `${protocol}//${host}/ws?playerId=${this.playerId}`;
   }
 
-  public connect(playerName: string, playerColor: string, elements: CreatureElement[], presetIndex: number = 0) {
+  public connect(
+    playerName: string,
+    playerColor: string,
+    elements: CreatureElement[],
+    presetIndex: number = 0,
+    initialState?: { x?: number; y?: number; angleDeg?: number; foodEaten?: number; score?: number }
+  ) {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -113,6 +120,11 @@ export class GameWebSocket {
           color: playerColor,
           elements,
           presetIndex,
+          targetX: initialState?.x,
+          targetY: initialState?.y,
+          targetAngleDeg: initialState?.angleDeg,
+          foodEaten: initialState?.foodEaten,
+          score: initialState?.score,
         });
 
         // Start ping ticker
@@ -154,7 +166,7 @@ export class GameWebSocket {
         if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
         this.reconnectTimer = setTimeout(() => {
           if (this.ws === currentWs || !this.ws) {
-            this.connect(playerName, playerColor, elements, presetIndex);
+            this.connect(playerName, playerColor, elements, presetIndex, initialState);
           }
         }, 2000);
       };
@@ -172,6 +184,12 @@ export class GameWebSocket {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     }
+  }
+
+  public sendRestart() {
+    this.send({
+      type: 'restart',
+    });
   }
 
   public sendInput(targetAngleDeg: number, targetX: number, targetY: number, muscleContract: boolean = false, dash: boolean = false, brake?: boolean) {
