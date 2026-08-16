@@ -94,6 +94,7 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
   const prevDashingMapRef = useRef<Map<string, boolean>>(new Map());
   const prevBrakingMapRef = useRef<Map<string, boolean>>(new Map());
   const cartoonCloudsRef = useRef<Array<{ x: number; y: number; scale: number; speed: number; opacity: number }>>([]);
+  const cartoon2DecorsRef = useRef<Array<{ x: number; y: number; scale: number; speedX: number; speedY: number; emoji: string; rot: number; vRot: number; opacity: number }>>([]);
   const smoothedHudYRef = useRef<Map<string, number>>(new Map());
   const isSpacePressedRef = useRef<boolean>(isSpacePressed);
   isSpacePressedRef.current = isSpacePressed;
@@ -408,7 +409,9 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
       const currentIsCameraLocked = isCameraLockedRef.current;
 
       // Theme Colors
-      const isCartoonTheme = currentGridTheme === 'cartoon';
+      const isCartoon1 = currentGridTheme === 'cartoon';
+      const isCartoon2 = currentGridTheme === 'cartoon2';
+      const isCartoonTheme = isCartoon1 || isCartoon2;
       const isGameTheme = currentGridTheme === 'game' || currentGridTheme === 'game-light';
 
       let bgColor = '#090d16';
@@ -416,7 +419,12 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
       let nodeDotColor = 'rgba(255, 255, 255, 0.3)';
       let mainInkColor = '#f1f5f9';
 
-      if (currentGridTheme === 'cartoon') {
+      if (currentGridTheme === 'cartoon2') {
+        bgColor = '#fae8ff';
+        gridLineColor = 'rgba(236, 72, 153, 0.32)';
+        nodeDotColor = '#ec4899';
+        mainInkColor = '#0f172a';
+      } else if (currentGridTheme === 'cartoon') {
         bgColor = '#bae6fd';
         gridLineColor = 'rgba(168, 85, 247, 0.18)';
         nodeDotColor = 'rgba(236, 72, 153, 0.55)';
@@ -444,7 +452,17 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
       }
 
       // Background fill
-      if (isCartoonTheme) {
+      if (isCartoon2) {
+        // Ultra-Vibrant Psychedelic Rainbow Aurora Sky for Cartoon 2!
+        const skyGrad = ctx.createLinearGradient(0, 0, width, height);
+        skyGrad.addColorStop(0, '#f472b6'); // Hot bubblegum pink
+        skyGrad.addColorStop(0.22, '#c084fc'); // Electric purple
+        skyGrad.addColorStop(0.48, '#67e8f9'); // Sky cyan
+        skyGrad.addColorStop(0.74, '#86efac'); // Candy neon green
+        skyGrad.addColorStop(1, '#fde047'); // Sunny golden yellow
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, width, height);
+      } else if (isCartoon1) {
         const skyGrad = ctx.createLinearGradient(0, 0, 0, height);
         skyGrad.addColorStop(0, '#c7d2fe'); // Soft pastel violet sky
         skyGrad.addColorStop(0.35, '#bae6fd'); // Cheerful light azure
@@ -566,8 +584,83 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
         }
       }
 
-      // Render floating cartoon background clouds
-      if (isCartoonTheme) {
+      // Initialize background cartoon2 floating fun decors
+      if (cartoon2DecorsRef.current.length === 0) {
+        const funEmojis = ['🍭', '🦄', '🌟', '🎈', '🍓', '🌈', '🧁', '🍩', '⚡', '💎', '🌸', '🍬', '✨', '🍉', '🎨'];
+        for (let i = 0; i < 38; i++) {
+          cartoon2DecorsRef.current.push({
+            x: (Math.random() - 0.5) * worldSize * 1.6,
+            y: (Math.random() - 0.5) * worldSize * 1.6,
+            scale: 0.7 + Math.random() * 0.9,
+            speedX: (Math.random() - 0.3) * 0.8,
+            speedY: (Math.random() - 0.5) * 0.5,
+            emoji: funEmojis[Math.floor(Math.random() * funEmojis.length)],
+            rot: Math.random() * Math.PI * 2,
+            vRot: (Math.random() - 0.5) * 1.5,
+            opacity: 0.35 + Math.random() * 0.45,
+          });
+        }
+      }
+
+      // Render floating cartoon background elements
+      if (isCartoon2) {
+        // --- CARTOON 2: FLOATING BUBBLES, RAINBOW ARCHES & EMOJI STICKERS ---
+        ctx.save();
+        cartoon2DecorsRef.current.forEach((item, idx) => {
+          item.x += item.speedX * dt;
+          item.y += item.speedY * dt;
+          item.rot += item.vRot * dt;
+
+          if (item.x > halfWorld * 1.5) item.x = -halfWorld * 1.5;
+          if (item.x < -halfWorld * 1.5) item.x = halfWorld * 1.5;
+          if (item.y > halfWorld * 1.5) item.y = -halfWorld * 1.5;
+          if (item.y < -halfWorld * 1.5) item.y = halfWorld * 1.5;
+
+          const cx = currentOffset.x + item.x * scaledCell;
+          const cy = currentOffset.y + item.y * scaledCell;
+
+          if (cx > -100 && cx < width + 100 && cy > -100 && cy < height + 100) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(item.rot);
+            const itemScale = item.scale * currentZoom;
+            ctx.scale(itemScale, itemScale);
+            ctx.globalAlpha = item.opacity;
+
+            // Bouncy Jelly Soap Bubble
+            const bubbleRad = 24;
+            const bubbleGrad = ctx.createRadialGradient(-6, -6, 2, 0, 0, bubbleRad);
+            bubbleGrad.addColorStop(0, 'rgba(255, 255, 255, 0.75)');
+            bubbleGrad.addColorStop(0.4, 'rgba(236, 72, 153, 0.25)');
+            bubbleGrad.addColorStop(0.8, 'rgba(56, 189, 248, 0.3)');
+            bubbleGrad.addColorStop(1, 'rgba(168, 85, 247, 0.5)');
+
+            ctx.fillStyle = bubbleGrad;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(0, 0, bubbleRad, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Specular Glint
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(-8, -8, 5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Emoji inside / floating with bubble
+            ctx.font = `${Math.round(20)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(item.emoji, 0, 2);
+
+            ctx.restore();
+          }
+        });
+        ctx.restore();
+      } else if (isCartoon1) {
+        // --- CARTOON 1: FLUFFY PASTEL CLOUDS ---
         ctx.save();
         cartoonCloudsRef.current.forEach((cloud) => {
           cloud.x += cloud.speed * dt;
@@ -608,9 +701,15 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
       const endY = Math.ceil((height - currentOffset.y) / scaledCell) + 1;
 
       ctx.beginPath();
-      ctx.strokeStyle = gridLineColor;
-      ctx.lineWidth = isCartoonTheme ? Math.max(1.2, 1.8 * currentZoom) : Math.max(1, 1.2 * currentZoom);
-      if (isCartoonTheme) {
+      ctx.strokeStyle = isCartoon2 ? 'rgba(255, 255, 255, 0.4)' : gridLineColor;
+      ctx.lineWidth = isCartoon2
+        ? Math.max(1.6, 2.2 * currentZoom)
+        : isCartoon1
+        ? Math.max(1.2, 1.8 * currentZoom)
+        : Math.max(1, 1.2 * currentZoom);
+      if (isCartoon2) {
+        ctx.setLineDash([6 * currentZoom, 6 * currentZoom]);
+      } else if (isCartoon1) {
         ctx.setLineDash([4 * currentZoom, 4 * currentZoom]);
       }
 
@@ -631,18 +730,42 @@ const GridCanvasComponent: React.FC<GridCanvasProps> = ({
 
       // Render Grid Intersections / Nodes
       if (currentShowNodes) {
-        ctx.fillStyle = nodeDotColor;
-        const dotRadius = isCartoonTheme ? Math.max(2, 3.2 * currentZoom) : Math.max(1.5, 2.5 * currentZoom);
-        ctx.beginPath();
-        for (let x = startX; x <= endX; x++) {
-          const screenX = currentOffset.x + x * scaledCell;
-          for (let y = startY; y <= endY; y++) {
-            const screenY = currentOffset.y + y * scaledCell;
-            ctx.moveTo(screenX + dotRadius, screenY);
-            ctx.arc(screenX, screenY, dotRadius, 0, Math.PI * 2);
+        if (isCartoon2) {
+          // --- CARTOON 2: SHIMMERING 4-POINT SPARKLE STARS ON NODES ---
+          const starRad = Math.max(3, 4.5 * currentZoom);
+          ctx.fillStyle = '#ffffff';
+          ctx.strokeStyle = '#f472b6';
+          ctx.lineWidth = 1.2;
+
+          for (let x = startX; x <= endX; x++) {
+            const screenX = currentOffset.x + x * scaledCell;
+            for (let y = startY; y <= endY; y++) {
+              const screenY = currentOffset.y + y * scaledCell;
+              // Draw 4-point comic sparkle star
+              ctx.beginPath();
+              ctx.moveTo(screenX, screenY - starRad);
+              ctx.quadraticCurveTo(screenX, screenY, screenX + starRad, screenY);
+              ctx.quadraticCurveTo(screenX, screenY, screenX, screenY + starRad);
+              ctx.quadraticCurveTo(screenX, screenY, screenX - starRad, screenY);
+              ctx.quadraticCurveTo(screenX, screenY, screenX, screenY - starRad);
+              ctx.fill();
+              ctx.stroke();
+            }
           }
+        } else {
+          ctx.fillStyle = nodeDotColor;
+          const dotRadius = isCartoon1 ? Math.max(2, 3.2 * currentZoom) : Math.max(1.5, 2.5 * currentZoom);
+          ctx.beginPath();
+          for (let x = startX; x <= endX; x++) {
+            const screenX = currentOffset.x + x * scaledCell;
+            for (let y = startY; y <= endY; y++) {
+              const screenY = currentOffset.y + y * scaledCell;
+              ctx.moveTo(screenX + dotRadius, screenY);
+              ctx.arc(screenX, screenY, dotRadius, 0, Math.PI * 2);
+            }
+          }
+          ctx.fill();
         }
-        ctx.fill();
       }
 
       // Render Field Arena Border Frame (Fast layered stroke)

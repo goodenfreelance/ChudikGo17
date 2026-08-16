@@ -3,6 +3,7 @@ class SoundEngine {
   private ctx: AudioContext | null = null;
   public enabled: boolean = true;
   public isCartoonMode: boolean = false;
+  public isCartoon2Mode: boolean = false;
 
   private getContext(): AudioContext | null {
     if (!this.enabled) return null;
@@ -18,11 +19,16 @@ class SoundEngine {
     return this.ctx;
   }
 
-  setCartoonMode(isCartoon: boolean) {
-    this.isCartoonMode = isCartoon;
+  setCartoonMode(isCartoon: boolean, isCartoon2: boolean = false) {
+    this.isCartoonMode = isCartoon || isCartoon2;
+    this.isCartoon2Mode = isCartoon2;
   }
 
   playStep() {
+    if (this.isCartoon2Mode) {
+      this.playCartoon2Step();
+      return;
+    }
     if (this.isCartoonMode) {
       this.playCartoonTap();
       return;
@@ -468,6 +474,137 @@ class SoundEngine {
 
       osc.start(now);
       osc.stop(now + 0.09);
+    } catch {
+      // Ignore
+    }
+  }
+
+  // --- CARTOON 2 EXCLUSIVE SOUND EFFECTS ---
+  playCartoon2Step() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      // Funky high bubble xylophone bloop
+      const pitches = [587.33, 659.25, 783.99, 880.0, 1046.5];
+      const p = pitches[Math.floor(Math.random() * pitches.length)];
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(p, now);
+      osc.frequency.exponentialRampToValueAtTime(p * 1.5, now + 0.025);
+      osc.frequency.exponentialRampToValueAtTime(p * 0.8, now + 0.045);
+
+      gain.gain.setValueAtTime(0.09, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.045);
+    } catch {
+      // Ignore
+    }
+  }
+
+  playCartoon2Chomp() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      // Hyper sparkly high-pitched chomp + glitter arpeggio
+      const notes = [880, 1174.66, 1396.91, 1760];
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.025);
+        osc.frequency.exponentialRampToValueAtTime(freq * 1.4, now + idx * 0.025 + 0.05);
+
+        gain.gain.setValueAtTime(0.18, now + idx * 0.025);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.025 + 0.07);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + idx * 0.025);
+        osc.stop(now + idx * 0.025 + 0.07);
+      });
+    } catch {
+      // Ignore
+    }
+  }
+
+  playCartoon2Dash() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      // Fast turbo retro synthesizer ascending slide
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(300, now);
+      osc.frequency.exponentialRampToValueAtTime(1400, now + 0.2);
+
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.22);
+    } catch {
+      // Ignore
+    }
+  }
+
+  playCartoon2Brake() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      // Funny cartoon squeaky rubber tire screech
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(950, now);
+      osc.frequency.linearRampToValueAtTime(320, now + 0.18);
+
+      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.2);
+    } catch {
+      // Ignore
+    }
+  }
+
+  playCartoon2Fanfare() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5, 1567.98]; // C5, E5, G5, C6, E6, G6
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.04);
+
+        gain.gain.setValueAtTime(0.16, now + idx * 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.04 + 0.18);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(now + idx * 0.04);
+        osc.stop(now + idx * 0.04 + 0.18);
+      });
     } catch {
       // Ignore
     }

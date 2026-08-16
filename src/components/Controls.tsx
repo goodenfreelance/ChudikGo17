@@ -257,32 +257,42 @@ export const Controls: React.FC<ControlsProps> = ({
       <div className="flex items-center gap-1.5">
         <button
           onClick={() => {
-            if (gridTheme === 'cartoon') onChangeTheme('game');
+            if (gridTheme === 'cartoon2') onChangeTheme('cartoon');
+            else if (gridTheme === 'cartoon') onChangeTheme('game');
             else if (gridTheme === 'game') onChangeTheme('game-light');
             else if (gridTheme === 'game-light') onChangeTheme('notebook');
-            else onChangeTheme('cartoon');
+            else onChangeTheme('cartoon2');
           }}
           className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition shadow-sm ${
-            gridTheme === 'cartoon'
-              ? 'bg-gradient-to-r from-amber-400 via-rose-400 to-indigo-400 text-slate-900 font-bold ring-2 ring-amber-300 shadow-amber-500/30 animate-pulse'
+            gridTheme === 'cartoon2'
+              ? 'bg-gradient-to-r from-yellow-300 via-pink-500 to-cyan-400 text-slate-950 font-black ring-2 ring-yellow-300 shadow-pink-500/40 animate-pulse'
+              : gridTheme === 'cartoon'
+              ? 'bg-gradient-to-r from-amber-400 via-rose-400 to-indigo-400 text-slate-900 font-bold ring-2 ring-amber-300 shadow-amber-500/30'
               : gridTheme === 'game' || gridTheme === 'game-light'
               ? 'bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 text-white ring-2 ring-pink-500/50 shadow-pink-500/25'
               : 'bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-slate-300'
           }`}
           title={
-            gridTheme === 'cartoon'
+            gridTheme === 'cartoon2'
+              ? 'Переключить на режим Мультик 1 🎨'
+              : gridTheme === 'cartoon'
               ? 'Включить Игровой темный режим'
               : gridTheme === 'game'
               ? 'Переключить на светлый игровой режим'
               : gridTheme === 'game-light'
               ? 'Вернуться в тетрадь'
-              : 'Включить режим Мультик 🎨✨'
+              : 'Включить режим Мультик 2 🌈🎉'
           }
         >
-          {gridTheme === 'cartoon' ? (
+          {gridTheme === 'cartoon2' ? (
+            <>
+              <Sparkles className="w-3.5 h-3.5 text-slate-950" />
+              <span>Мультик 2 🌈🎉</span>
+            </>
+          ) : gridTheme === 'cartoon' ? (
             <>
               <Sparkles className="w-3.5 h-3.5 text-amber-900" />
-              <span>Мультик 🎨✨</span>
+              <span>Мультик 1 🎨✨</span>
             </>
           ) : (
             <>
@@ -303,7 +313,8 @@ export const Controls: React.FC<ControlsProps> = ({
           onChange={(e) => onChangeTheme(e.target.value as GridTheme)}
           className="px-2 py-1.5 text-xs bg-slate-800/80 border border-slate-700/60 rounded-xl text-slate-200 focus:outline-none"
         >
-          <option value="cartoon">Мультик 🎨✨ (Супер анимации)</option>
+          <option value="cartoon2">Мультик 2 🌈🎉 (Супер-яркий & Дисней)</option>
+          <option value="cartoon">Мультик 1 🎨✨ (Милый классик)</option>
           <option value="notebook">Тетрадь 📖</option>
           <option value="game">Игровой темный 🐍🌙</option>
           <option value="game-light">Игровой светлый 🐍☀️</option>

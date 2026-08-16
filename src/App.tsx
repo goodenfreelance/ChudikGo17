@@ -30,7 +30,7 @@ export default function App() {
   }, [soundEnabled]);
 
   useEffect(() => {
-    soundFx.setCartoonMode(gridTheme === 'cartoon');
+    soundFx.setCartoonMode(gridTheme === 'cartoon' || gridTheme === 'cartoon2', gridTheme === 'cartoon2');
   }, [gridTheme]);
   const [showNodes, setShowNodes] = useState<boolean>(true);
   const [selectedCreatureId, setSelectedCreatureId] = useState<string | null>('c-1');
